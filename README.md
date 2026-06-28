@@ -82,7 +82,7 @@ O projeto foi construído seguindo o padrão arquitetural **MVC (Model-View-Cont
 ### Passo a Passo
 1. **Clone o repositório**
    ```bash
-   git clone https://github.com/victorhob1981/ERP-LOJAESPORTES.git
+   git clone https://github.com/victorhobdev/ERP-LOJAESPORTES.git
 2. **Configuração do Banco**
 
 Crie um banco de dados chamado gemini_erp (ou ajuste no arquivo ConexaoBanco.java)
@@ -99,13 +99,10 @@ Ajuste as credenciais de banco em src/UTIL/ConexaoBanco.java
 
 Execute a classe principal: src/erp/application/Main.java
 
-👨‍💻 Autor
+---
 
-Victor Hugo de Oliveira Barbosa
-Estudante de Sistemas de Informação — UFRRJ
+## Autor
 
-Projeto desenvolvido com foco em engenharia de software, modelagem de domínio e resolução de problemas reais, buscando aplicar boas práticas de arquitetura, organização e persistência de dados.
+[Victor Hugo Oliveira Barbosa](https://github.com/victorhobdev) — Estudante de Sistemas de Informação na UFRRJ
 
-🔗 LinkedIn: https://www.linkedin.com/in/victor-ho-barbosa
-
-📩 Email: victorhob23@gmail.com
+[![LinkedIn](https://img.shields.io/badge/victor--ho--barbosa-0A66C2?style=flat-square&logo=linkedin&logoColor=white)](https://linkedin.com/in/victor-ho-barbosa)
