@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:integration": "vitest run src/shared/db/database.integration.test.ts",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
