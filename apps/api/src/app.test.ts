@@ -53,4 +53,32 @@ describe('API foundation', () => {
     expect(allowed.headers['access-control-allow-origin']).toBe('https://erp.local')
     expect(denied.headers['access-control-allow-origin']).toBeUndefined()
   })
+
+  it('maps rate-limit failures without exposing internals', async () => {
+    const app = buildApp({ logger: false })
+    apps.push(app)
+    app.get('/limited', async () => {
+      throw Object.assign(new Error('internal limiter detail'), { statusCode: 429 })
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/limited' })
+
+    expect(response.statusCode).toBe(429)
+    expect(response.json()).toMatchObject({ code: 'RATE_LIMITED' })
+    expect(response.body).not.toContain('internal limiter detail')
+  })
+
+  it('maps unexpected failures to a generic request-scoped error', async () => {
+    const app = buildApp({ logger: false })
+    apps.push(app)
+    app.get('/failure', async () => {
+      throw new Error('sensitive internal detail')
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/failure' })
+
+    expect(response.statusCode).toBe(500)
+    expect(response.json()).toMatchObject({ code: 'INTERNAL_ERROR', requestId: expect.any(String) })
+    expect(response.body).not.toContain('sensitive internal detail')
+  })
 })

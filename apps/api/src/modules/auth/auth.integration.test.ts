@@ -36,7 +36,7 @@ describe('authentication HTTP flow', () => {
         '00000000-0000-4000-8000-000000000003',
       ],
     )
-    app = buildApp({ pool, logger: false, secureCookies: false })
+    app = buildApp({ pool, logger: false, secureCookies: true })
     await app.ready()
   }, 30_000)
 
@@ -60,6 +60,32 @@ describe('authentication HTTP flow', () => {
     expect(response.headers['set-cookie']).toBeUndefined()
   })
 
+  it('rejects malformed credentials and an unknown user safely', async () => {
+    const malformed = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { username: '', password: 'curta' },
+    })
+    const unknown = await app.inject({
+      method: 'POST',
+      url: '/auth/login',
+      payload: { username: 'nao.existe', password: 'senha local segura' },
+    })
+
+    expect(malformed.statusCode).toBe(400)
+    expect(malformed.json()).toMatchObject({ code: 'VALIDATION_ERROR' })
+    expect(unknown.statusCode).toBe(401)
+    expect(unknown.json()).toMatchObject({ code: 'INVALID_CREDENTIALS' })
+  })
+
+  it('requires a live session for session reads and logout', async () => {
+    const session = await app.inject({ method: 'GET', url: '/auth/session' })
+    const logout = await app.inject({ method: 'POST', url: '/auth/logout' })
+
+    expect(session.statusCode).toBe(401)
+    expect(logout.statusCode).toBe(401)
+  })
+
   it('creates an opaque session, enforces CSRF, returns RBAC and invalidates logout', async () => {
     const login = await app.inject({
       method: 'POST',
@@ -73,6 +99,7 @@ describe('authentication HTTP flow', () => {
     const csrfCookie = requiredCookie(setCookies, 'erp_csrf')
     expect(setCookies.find((value) => value.startsWith('erp_session='))).toContain('HttpOnly')
     expect(setCookies.every((value) => value.includes('SameSite=Strict'))).toBe(true)
+    expect(setCookies.every((value) => value.includes('Secure'))).toBe(true)
 
     const stored = await pool.query<{ token_hash: string }>('SELECT token_hash FROM sessions')
     const rawSessionToken = cookieValue(sessionCookie)
@@ -91,6 +118,13 @@ describe('authentication HTTP flow', () => {
     expect(rejectedLogout.statusCode).toBe(403)
     expect(rejectedLogout.json()).toMatchObject({ code: 'INVALID_CSRF' })
 
+    const wrongCsrf = await app.inject({
+      method: 'POST',
+      url: '/auth/logout',
+      headers: { cookie, 'x-csrf-token': 'valor-incorreto' },
+    })
+    expect(wrongCsrf.statusCode).toBe(403)
+
     const logout = await app.inject({
       method: 'POST',
       url: '/auth/logout',
@@ -99,6 +133,20 @@ describe('authentication HTTP flow', () => {
     expect(logout.statusCode).toBe(204)
     const remaining = await pool.query<{ count: string }>('SELECT count(*) FROM sessions')
     expect(remaining.rows[0]?.count).toBe('0')
+  })
+
+  it('rate-limits repeated login attempts by caller IP', async () => {
+    const responses = []
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      responses.push(await app.inject({
+        method: 'POST',
+        url: '/auth/login',
+        payload: { username: 'ataque.teste', password: 'senha local segura' },
+      }))
+    }
+
+    expect(responses.some((response) => response.statusCode === 429)).toBe(true)
+    expect(responses.find((response) => response.statusCode === 429)?.json()).toMatchObject({ code: 'RATE_LIMITED' })
   })
 })
 

@@ -46,7 +46,7 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | Bloco | Status | Evidência atual | Gate pendente |
 | --- | --- | --- | --- |
 | 0 — descoberta | `PARCIAL` | `AGENTS.md` fornecido na tarefa, documentos `00`–`11`, `ERP_REAL_CONTEXT.md`, `database.sql`, schema do backup local e regras críticas do legado foram lidos/confirmados. | Banco de produção, decisões operacionais/financeiras e aprovação do responsável. |
-| 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, hash de senha, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação, sessão/RBAC e CI. |
+| 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, sessão PostgreSQL, RBAC, CSRF/CORS/CSP/rate limit, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação e CI. |
 | 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas, constraints de saldo/dinheiro, movimentos, idempotência, auditoria e migração/rejeições; runner com checksum e rollback validados em PostgreSQL 16 real. | Serviços/rotas de estoque, migrador legado e reconciliação. |
 | 3 — vendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Fluxos, concorrência e idempotência verdes. |
 | 4 — compras e encomendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Recebimentos e timelines conciliados. |
@@ -125,3 +125,14 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - O teste de integração usa usuário sintético em schema aleatório e valida hash de sessão, cookie HttpOnly, permissões, CSRF e invalidação no banco.
 - Incidente de runner corrigido antes de aceitar o RED: o teste de integração foi explicitamente excluído da suíte unitária sem `TEST_DATABASE_URL`.
 - Próximo passo seguro: implementar plugins HTTP e as três rotas de autenticação com PostgreSQL.
+
+### 2026-08-30 — Bloco 1, checkpoint GREEN de autenticação HTTP
+
+- Login, sessão e logout persistidos no PostgreSQL; senha usa scrypt; tokens de sessão/CSRF persistem somente por SHA-256.
+- Cookies de produção: sessão `HttpOnly`, ambos `Secure` e `SameSite=Strict`; logout limpa e invalida a sessão em transação auditada.
+- CSP sem `unsafe-eval`/`unsafe-inline`, CORS por allowlist, erros sem detalhes internos e logs com cookie/token redigidos.
+- Rate limit de login validado por integração. Primeira tentativa falhou porque o plugin estava em escopo Fastify incorreto; registro movido para o escopo das rotas e teste repetido com 429.
+- `pnpm --filter @erp/api test:coverage:all`: 20 testes PASS, 93,38% statements, 93,22% branches, 100% functions, 93,75% lines.
+- `pnpm check`: PASS para lint, tipos, 23 testes unitários totais e builds.
+- Risco residual: limite atual é por IP em memória do processo; limite por usuário/armazenamento compartilhado será necessário antes de múltiplas instâncias.
+- Próximo passo seguro: CI reproduzível e ciclo de produtos/estoque com transações, autorização e idempotência.

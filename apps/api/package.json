@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --exclude src/shared/db/database.integration.test.ts --exclude src/modules/auth/auth.integration.test.ts",
     "test:integration": "vitest run src/shared/db/database.integration.test.ts src/modules/auth/auth.integration.test.ts",
+    "test:coverage:all": "vitest run --coverage",
     "test:coverage": "vitest run --coverage --exclude src/shared/db/database.integration.test.ts --exclude src/modules/auth/auth.integration.test.ts"
   },
   "dependencies": {
