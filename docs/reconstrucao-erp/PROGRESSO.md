@@ -47,7 +47,7 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | --- | --- | --- | --- |
 | 0 — descoberta | `PARCIAL` | `AGENTS.md` fornecido na tarefa, documentos `00`–`11`, `ERP_REAL_CONTEXT.md`, `database.sql`, schema do backup local e regras críticas do legado foram lidos/confirmados. | Banco de produção, decisões operacionais/financeiras e aprovação do responsável. |
 | 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, hash de senha, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação, sessão/RBAC e CI. |
-| 2 — dados e estoque | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Schema, estoque por movimentos, migrador e reconciliação verdes. |
+| 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas, constraints de saldo/dinheiro, movimentos, idempotência, auditoria e migração/rejeições; reexecução pré-validada em PostgreSQL WASM. | Servidor PostgreSQL real, serviços/rotas de estoque, migrador legado e reconciliação. |
 | 3 — vendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Fluxos, concorrência e idempotência verdes. |
 | 4 — compras e encomendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Recebimentos e timelines conciliados. |
 | 5 — financeiro, catálogo e operação | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Indicadores, catálogo, auditoria, backup/restauração e operação verdes. |
@@ -96,3 +96,14 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - `pnpm --filter @erp/api test`: RED válido para schema ausente, rejeição de saldo negativo, autorização e segredos de sessão/CSRF.
 - PGlite foi adicionado apenas como pré-validação PostgreSQL em memória. O gate de integração com servidor real continua pendente e não será inferido deste teste.
 - Próximo passo seguro: implementar o schema inicial e as primitivas mínimas de autenticação/RBAC, repetir os mesmos testes e manter o teste de servidor real em aberto.
+
+### 2026-08-30 — Bloco 1/2, checkpoint GREEN de autenticação e schema
+
+- `pnpm --filter @erp/api test`: 5 arquivos e 9 testes PASS.
+- `pnpm check`: PASS para lint, tipos, 19 testes totais e builds dos três workspaces.
+- `pnpm test:coverage`: API 91,42% statements/85,71% branches; contratos e web 100% no escopo atual.
+- `001_initial.sql` foi aplicado duas vezes no pré-validador e criou as 25 tabelas operacionais exigidas; tentativa de saldo negativo foi rejeitada pelo banco.
+- Sessão/CSRF geram segredos independentes, persistem somente hashes; RBAC nega permissões ausentes e aceita wildcard administrativo.
+- Estado final comparado ao RED: todos os quatro alvos ausentes agora estão implementados e verdes.
+- Risco residual: PGlite não substitui PostgreSQL servidor; integração, transações e concorrência continuam sem evidência real enquanto o daemon Docker não responder.
+- Próximo passo seguro: runner de migração/health do banco, endpoints de sessão e proteções HTTP, com teste de integração preparado para `TEST_DATABASE_URL`.
