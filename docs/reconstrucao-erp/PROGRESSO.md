@@ -46,7 +46,7 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | Bloco | Status | Evidência atual | Gate pendente |
 | --- | --- | --- | --- |
 | 0 — descoberta | `PARCIAL` | `AGENTS.md` fornecido na tarefa, documentos `00`–`11`, `ERP_REAL_CONTEXT.md`, `database.sql`, schema do backup local e regras críticas do legado foram lidos/confirmados. | Banco de produção, decisões operacionais/financeiras e aprovação do responsável. |
-| 1 — experiência e fundação | `NAO_FEITO` | Baseline: não havia monorepo nem test runner. | Protótipos, teste de usabilidade, fundação executável, autenticação e CI verdes. |
+| 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, hash de senha, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação, sessão/RBAC e CI. |
 | 2 — dados e estoque | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Schema, estoque por movimentos, migrador e reconciliação verdes. |
 | 3 — vendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Fluxos, concorrência e idempotência verdes. |
 | 4 — compras e encomendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Recebimentos e timelines conciliados. |
@@ -80,3 +80,12 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - `pnpm --filter @erp/web test`: RED em `App.test.tsx` por implementação ausente.
 - Os runners iniciaram e resolveram as dependências; as falhas são compile-time RED causadas exclusivamente pelos comportamentos ainda não implementados.
 - Próximo passo seguro: implementar apenas o necessário para tornar esses mesmos testes verdes.
+
+### 2026-08-30 — Bloco 1, checkpoint GREEN da fundação
+
+- `pnpm check`: PASS para ESLint, TypeScript estrito, 13 testes e builds de produção dos três workspaces.
+- `pnpm test:coverage`: contratos 100%; web 100% do ciclo; API 88% statements, 80% branches, 85,71% functions e 91,3% lines.
+- Build web: 147 módulos; JS 296,17 kB (94,51 kB gzip); CSS 10,86 kB (3,32 kB gzip).
+- Falhas intermediárias corrigidas e revalidadas: deadlock do hook Fastify, limpeza de DOM de teste, emissão indevida do TypeScript e `rootDir` do build de contratos.
+- Estado final comparado ao baseline: monorepo e runners agora existem e são reproduzíveis pelo lockfile; ainda não há banco, sessão, RBAC nem fluxos de domínio.
+- Próximo passo seguro: novo ciclo RED para PostgreSQL, migrações, sessão e autorização inicial.
