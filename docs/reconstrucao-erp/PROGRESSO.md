@@ -89,3 +89,10 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - Falhas intermediárias corrigidas e revalidadas: deadlock do hook Fastify, limpeza de DOM de teste, emissão indevida do TypeScript e `rootDir` do build de contratos.
 - Estado final comparado ao baseline: monorepo e runners agora existem e são reproduzíveis pelo lockfile; ainda não há banco, sessão, RBAC nem fluxos de domínio.
 - Próximo passo seguro: novo ciclo RED para PostgreSQL, migrações, sessão e autorização inicial.
+
+### 2026-08-30 — Bloco 1, checkpoint RED de autenticação e banco
+
+- Docker Desktop iniciou processos locais, mas o daemon não respondeu. O serviço `com.docker.service` exige privilégio indisponível nesta sessão; nenhum container foi criado.
+- `pnpm --filter @erp/api test`: RED válido para schema ausente, rejeição de saldo negativo, autorização e segredos de sessão/CSRF.
+- PGlite foi adicionado apenas como pré-validação PostgreSQL em memória. O gate de integração com servidor real continua pendente e não será inferido deste teste.
+- Próximo passo seguro: implementar o schema inicial e as primitivas mínimas de autenticação/RBAC, repetir os mesmos testes e manter o teste de servidor real em aberto.
