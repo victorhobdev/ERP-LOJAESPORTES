@@ -30,4 +30,27 @@ describe('API foundation', () => {
     expect(response.json()).toMatchObject({ code: 'NOT_FOUND' })
     expect(response.body).not.toContain('stack')
   })
+
+  it('sets restrictive browser security headers', async () => {
+    const app = buildApp({ logger: false })
+    apps.push(app)
+
+    const response = await app.inject({ method: 'GET', url: '/health' })
+
+    expect(response.headers['content-security-policy']).toContain("default-src 'self'")
+    expect(response.headers['content-security-policy']).not.toContain("'unsafe-eval'")
+    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN')
+    expect(response.headers['x-content-type-options']).toBe('nosniff')
+  })
+
+  it('allows only explicitly configured cross-origin callers', async () => {
+    const app = buildApp({ logger: false, allowedOrigins: ['https://erp.local'] })
+    apps.push(app)
+
+    const allowed = await app.inject({ method: 'GET', url: '/health', headers: { origin: 'https://erp.local' } })
+    const denied = await app.inject({ method: 'GET', url: '/health', headers: { origin: 'https://evil.invalid' } })
+
+    expect(allowed.headers['access-control-allow-origin']).toBe('https://erp.local')
+    expect(denied.headers['access-control-allow-origin']).toBeUndefined()
+  })
 })

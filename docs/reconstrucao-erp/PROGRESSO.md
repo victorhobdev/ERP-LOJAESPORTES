@@ -117,3 +117,11 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - Incidente corrigido: timeout padrão de 5 s durante a primeira inicialização/migração; inspeção objetiva confirmou conclusão, teste foi isolado e reexecutado com limite de 30 s, passando em ~9,6 s.
 - `pnpm check`: permaneceu integralmente verde em paralelo ao teste PostgreSQL.
 - Próximo passo seguro: endpoints de login/sessão/logout, cookies, CSRF, CORS, CSP, rate limit e health de prontidão com banco.
+
+### 2026-08-30 — Bloco 1, checkpoint RED de autenticação HTTP
+
+- Unitário RED: CSP e CORS esperados não existem no `buildApp` atual; 9 testes anteriores da API permanecem verdes.
+- Integração RED: `POST /auth/login` retorna 404 para credencial inválida e válida, comprovando ausência das rotas.
+- O teste de integração usa usuário sintético em schema aleatório e valida hash de sessão, cookie HttpOnly, permissões, CSRF e invalidação no banco.
+- Incidente de runner corrigido antes de aceitar o RED: o teste de integração foi explicitamente excluído da suíte unitária sem `TEST_DATABASE_URL`.
+- Próximo passo seguro: implementar plugins HTTP e as três rotas de autenticação com PostgreSQL.
