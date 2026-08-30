@@ -47,7 +47,7 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | --- | --- | --- | --- |
 | 0 — descoberta | `PARCIAL` | `AGENTS.md` fornecido na tarefa, documentos `00`–`11`, `ERP_REAL_CONTEXT.md`, `database.sql`, schema do backup local e regras críticas do legado foram lidos/confirmados. | Banco de produção, decisões operacionais/financeiras e aprovação do responsável. |
 | 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, hash de senha, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação, sessão/RBAC e CI. |
-| 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas, constraints de saldo/dinheiro, movimentos, idempotência, auditoria e migração/rejeições; reexecução pré-validada em PostgreSQL WASM. | Servidor PostgreSQL real, serviços/rotas de estoque, migrador legado e reconciliação. |
+| 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas, constraints de saldo/dinheiro, movimentos, idempotência, auditoria e migração/rejeições; runner com checksum e rollback validados em PostgreSQL 16 real. | Serviços/rotas de estoque, migrador legado e reconciliação. |
 | 3 — vendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Fluxos, concorrência e idempotência verdes. |
 | 4 — compras e encomendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Recebimentos e timelines conciliados. |
 | 5 — financeiro, catálogo e operação | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Indicadores, catálogo, auditoria, backup/restauração e operação verdes. |
@@ -107,3 +107,13 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - Estado final comparado ao RED: todos os quatro alvos ausentes agora estão implementados e verdes.
 - Risco residual: PGlite não substitui PostgreSQL servidor; integração, transações e concorrência continuam sem evidência real enquanto o daemon Docker não responder.
 - Próximo passo seguro: runner de migração/health do banco, endpoints de sessão e proteções HTTP, com teste de integração preparado para `TEST_DATABASE_URL`.
+
+### 2026-08-30 — Bloco 2, checkpoint GREEN do servidor PostgreSQL
+
+- Cluster PostgreSQL 16.14 descartável criado em WSL2, sem dados/credenciais reais; banco dedicado `erp2_test`, porta 55432.
+- Runner aplica migrations em transação, grava SHA-256 em `schema_migrations`, rejeita alteração posterior do arquivo e não reaplica migration já registrada.
+- Integração real: 2 testes PASS; primeira aplicação/segunda vazia e rollback comprovado por consulta posterior.
+- Isolamento: cada execução usa schema aleatório `erp2_test_<uuid>` e o remove no teardown somente após confirmar o banco dedicado.
+- Incidente corrigido: timeout padrão de 5 s durante a primeira inicialização/migração; inspeção objetiva confirmou conclusão, teste foi isolado e reexecutado com limite de 30 s, passando em ~9,6 s.
+- `pnpm check`: permaneceu integralmente verde em paralelo ao teste PostgreSQL.
+- Próximo passo seguro: endpoints de login/sessão/logout, cookies, CSRF, CORS, CSP, rate limit e health de prontidão com banco.

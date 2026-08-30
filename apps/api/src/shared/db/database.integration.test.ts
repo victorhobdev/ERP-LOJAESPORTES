@@ -9,16 +9,24 @@ const connectionString = process.env['TEST_DATABASE_URL']
 if (!connectionString) throw new Error('TEST_DATABASE_URL is required for PostgreSQL integration tests.')
 
 describe('PostgreSQL server integration', () => {
-  const pool = new Pool({ connectionString, max: 4 })
+  const adminPool = new Pool({ connectionString, max: 1 })
+  const schema = `erp2_test_${randomUUID().replaceAll('-', '')}`
+  let pool: Pool
 
   beforeAll(async () => {
-    const result = await pool.query<{ current_database: string }>('SELECT current_database()')
+    const result = await adminPool.query<{ current_database: string }>('SELECT current_database()')
     if (result.rows[0]?.current_database !== 'erp2_test') {
       throw new Error('Integration tests refuse to run outside the dedicated erp2_test database.')
     }
+    await adminPool.query(`CREATE SCHEMA "${schema}"`)
+    pool = new Pool({ connectionString, max: 4, options: `-c search_path=${schema}` })
   })
 
-  afterAll(async () => pool.end())
+  afterAll(async () => {
+    await pool?.end()
+    if (schema.startsWith('erp2_test_')) await adminPool.query(`DROP SCHEMA "${schema}" CASCADE`)
+    await adminPool.end()
+  })
 
   it('applies each migration once and records its checksum', async () => {
     const first = await applyMigrations(pool)
@@ -32,7 +40,7 @@ describe('PostgreSQL server integration', () => {
     expect(result.rows).toEqual([
       { filename: '001_initial.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) },
     ])
-  })
+  }, 30_000)
 
   it('rolls back partial writes in a real transaction', async () => {
     const client = await pool.connect()
