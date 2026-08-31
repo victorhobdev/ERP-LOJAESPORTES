@@ -32,13 +32,14 @@ describe('PostgreSQL server integration', () => {
     const first = await applyMigrations(pool)
     const second = await applyMigrations(pool)
 
-    expect(first.applied).toContain('001_initial.sql')
+    expect(first.applied).toEqual(['001_initial.sql', '002_manager_purchase_read.sql'])
     expect(second.applied).toEqual([])
     const result = await pool.query<{ filename: string; checksum: string }>(
       'SELECT filename, checksum FROM schema_migrations ORDER BY filename',
     )
     expect(result.rows).toEqual([
       { filename: '001_initial.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) },
+      { filename: '002_manager_purchase_read.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) },
     ])
   }, 30_000)
 

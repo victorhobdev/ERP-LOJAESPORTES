@@ -56,16 +56,23 @@ describe('purchase orders HTTP flow', () => {
 
   it('creates an order and reconciles two idempotent partial receipts through full receipt', async () => {
     const variantId = await insertVariant(0, '0.00')
-    const order = await postOrder(randomUUID(), {
+    const orderKey = randomUUID()
+    const orderPayload = {
       supplierId,
       orderedOn: '2026-08-30',
       importFeeAmount: '20.00',
       items: [{ variantId, orderedQuantity: 4, supplierUnitCost: '50.00' }],
-    })
+    }
+    const order = await postOrder(orderKey, orderPayload)
+    const orderReplay = await postOrder(orderKey, orderPayload)
     expect(order.statusCode).toBe(201)
+    expect(orderReplay.json()).toEqual(order.json())
     expect(order.json()).toMatchObject({ status: 'placed', estimatedItemsAmount: '200.00', importFeeAmount: '20.00', finalAmount: '220.00' })
     const orderItemId = order.json().items[0].id
     expect(order.json().items[0]).toMatchObject({ variantId, orderedQuantity: 4, receivedQuantity: 0, finalUnitCost: '55.00' })
+    const changedOrder = await postOrder(orderKey, { ...orderPayload, importFeeAmount: '30.00' })
+    expect(changedOrder.statusCode).toBe(409)
+    expect(changedOrder.json()).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' })
 
     const firstKey = randomUUID()
     const first = await postReceipt(order.json().id, firstKey, { items: [{ purchaseOrderItemId: orderItemId, quantity: 2 }], notes: 'Primeiro lote' })
@@ -73,6 +80,13 @@ describe('purchase orders HTTP flow', () => {
     expect(first.statusCode).toBe(201)
     expect(replay.json()).toEqual(first.json())
     expect(first.json()).toMatchObject({ status: 'partially_received' })
+
+    const changedReceipt = await postReceipt(order.json().id, firstKey, { items: [{ purchaseOrderItemId: orderItemId, quantity: 1 }] })
+    expect(changedReceipt.statusCode).toBe(409)
+    expect(changedReceipt.json()).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' })
+    const overReceipt = await postReceipt(order.json().id, randomUUID(), { items: [{ purchaseOrderItemId: orderItemId, quantity: 3 }] })
+    expect(overReceipt.statusCode).toBe(409)
+    expect(overReceipt.json()).toMatchObject({ code: 'RECEIPT_QUANTITY_EXCEEDED' })
 
     const second = await postReceipt(order.json().id, randomUUID(), { items: [{ purchaseOrderItemId: orderItemId, quantity: 2 }] })
     expect(second.statusCode).toBe(201)
@@ -108,7 +122,7 @@ describe('purchase orders HTTP flow', () => {
 
     const responses = await Promise.all([request(), request()])
     expect(responses.map(({ statusCode }) => statusCode).sort()).toEqual([201, 409])
-    expect(responses.find(({ statusCode }) => statusCode === 409)?.json()).toMatchObject({ code: 'RECEIPT_QUANTITY_EXCEEDED' })
+    expect(responses.find(({ statusCode }) => statusCode === 409)?.json()).toMatchObject({ code: 'PURCHASE_ORDER_NOT_RECEIVABLE' })
 
     const state = await pool.query<{ stock_quantity: number; received_quantity: number; receipts: string }>(
       `SELECT v.stock_quantity, poi.received_quantity,
@@ -118,6 +132,41 @@ describe('purchase orders HTTP flow', () => {
       [orderItemId],
     )
     expect(state.rows[0]).toEqual({ stock_quantity: 1, received_quantity: 1, receipts: '1' })
+  })
+
+  it('rejects missing references and totals that cannot be allocated', async () => {
+    const variantId = await insertVariant(0, '0.00')
+    const base = {
+      orderedOn: '2026-08-30',
+      importFeeAmount: '0.00',
+      items: [{ variantId, orderedQuantity: 1, supplierUnitCost: '10.00' }],
+    }
+    const missingSupplier = await postOrder(randomUUID(), { ...base, supplierId: randomUUID() })
+    expect(missingSupplier.statusCode).toBe(404)
+    expect(missingSupplier.json()).toMatchObject({ code: 'SUPPLIER_NOT_FOUND' })
+
+    const missingVariant = await postOrder(randomUUID(), {
+      ...base,
+      supplierId,
+      items: [{ variantId: randomUUID(), orderedQuantity: 1, supplierUnitCost: '10.00' }],
+    })
+    expect(missingVariant.statusCode).toBe(404)
+    expect(missingVariant.json()).toMatchObject({ code: 'VARIANT_NOT_FOUND' })
+
+    const unallocatable = await postOrder(randomUUID(), {
+      ...base,
+      supplierId,
+      importFeeAmount: '1.00',
+      items: [{ variantId, orderedQuantity: 1, supplierUnitCost: '0.00' }],
+    })
+    expect(unallocatable.statusCode).toBe(400)
+    expect(unallocatable.json()).toMatchObject({ code: 'INVALID_PURCHASE_TOTAL' })
+
+    const missingOrder = await postReceipt(randomUUID(), randomUUID(), {
+      items: [{ purchaseOrderItemId: randomUUID(), quantity: 1 }],
+    })
+    expect(missingOrder.statusCode).toBe(404)
+    expect(missingOrder.json()).toMatchObject({ code: 'PURCHASE_ORDER_NOT_FOUND' })
   })
 
   function postOrder(key: string, payload: Record<string, unknown>) {

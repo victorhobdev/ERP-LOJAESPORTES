@@ -49,7 +49,7 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, sessão PostgreSQL, RBAC, CSRF/CORS/CSP/rate limit, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação e CI. |
 | 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas; produtos/variantes; leitura e ajuste de estoque; primeira versão do migrador de produtos com checksum, rejeições, rastreabilidade e reconciliação de `opening_balance`, validada em PostgreSQL 16 real. | Entrada por compra, demais origens de movimento e homologação contra fonte oficial. |
 | 3 — vendas | `PARCIAL` | Criação paga/pendente, detalhe/lista, totais autoritativos, baixa, pagamentos posteriores e troca imutável; auditoria, idempotência por usuário e concorrência real verdes. | PDV, aprovação de diferença financeira da troca e E2E. |
-| 4 — compras e encomendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Recebimentos e timelines conciliados. |
+| 4 — compras e encomendas | `PARCIAL` | Pedido realizado e detalhe; rateio de custo; recebimentos parciais idempotentes; custo médio, estoque, movimentos e concorrência conciliados. | Cancelamento após decisão oficial; encomendas e timeline. |
 | 5 — financeiro, catálogo e operação | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Indicadores, catálogo, auditoria, backup/restauração e operação verdes. |
 | 6 — migração e corte | `NAO_FEITO` | Nenhuma migração real executada. | Homologação determinística, treinamento, paralelo e aprovações de corte. |
 
@@ -229,3 +229,14 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - RED válido: 22 testes anteriores PASS; os 3 novos testes falham com HTTP 404 porque `/purchase-orders` ainda não existe.
 - Cancelamento permanece fora deste ciclo até aprovação do estado oficial divergente no legado.
 - Próximo passo seguro: implementar pedido/recebimento mínimos e repetir exatamente os mesmos testes.
+
+### 2026-08-30 — Bloco 4, checkpoint GREEN de compras
+
+- `POST /purchase-orders` calcula estimativa, taxa, total e custo unitário final proporcional; replay não duplica e referências inválidas não criam pedido.
+- Dois recebimentos de 2 unidades conciliaram 4 pedidas/4 recebidas/0 pendentes, estoque 4, custo médio 55,00, dois movimentos e duas auditorias.
+- Recebimento bloqueia pedido, itens e variantes; duas requisições concorrentes para a única unidade produziram 201/409 e uma única entrada.
+- `GET /purchase-orders/:id` agrega itens com pendência e recebimentos. A migration `002_manager_purchase_read.sql` adiciona leitura ao gestor sem alterar checksum da migration inicial.
+- Carga com taxa e base estimada zero é rejeitada; fornecedor/variante/pedido inexistentes e excesso parcial também têm respostas explícitas.
+- `pnpm --filter @erp/api test:integration`: 26 testes PASS em PostgreSQL 16; cobertura integral da API: 39 testes PASS, 88,34% statements, 80,57% branches, 100% functions e 91,77% lines.
+- Cancelamento continua bloqueado pela decisão externa sobre o conjunto oficial de estados.
+- Próximo passo seguro: ciclo TDD de encomendas de cliente e timeline de status.
