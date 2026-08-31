@@ -139,7 +139,7 @@ describe('sales HTTP flow', () => {
     expect(state.rows[0]).toEqual({ stock_quantity: 0, sales: '1', movements: '1' })
   })
 
-  function postSale(key: string, payload: unknown) {
+  function postSale(key: string, payload: Record<string, unknown>) {
     return app.inject({
       method: 'POST',
       url: '/sales',

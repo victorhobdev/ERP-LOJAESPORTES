@@ -48,7 +48,7 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | 0 — descoberta | `PARCIAL` | `AGENTS.md` fornecido na tarefa, documentos `00`–`11`, `ERP_REAL_CONTEXT.md`, `database.sql`, schema do backup local e regras críticas do legado foram lidos/confirmados. | Banco de produção, decisões operacionais/financeiras e aprovação do responsável. |
 | 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, sessão PostgreSQL, RBAC, CSRF/CORS/CSP/rate limit, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação e CI. |
 | 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas; produtos/variantes; leitura e ajuste de estoque; primeira versão do migrador de produtos com checksum, rejeições, rastreabilidade e reconciliação de `opening_balance`, validada em PostgreSQL 16 real. | Entrada por compra, demais origens de movimento e homologação contra fonte oficial. |
-| 3 — vendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Fluxos, concorrência e idempotência verdes. |
+| 3 — vendas | `PARCIAL` | Criação paga/pendente e detalhe; preço/custo/totais autoritativos; baixa transacional; auditoria; idempotência por usuário e concorrência real verdes. | Lista/filtros, pagamentos posteriores, troca, PDV e E2E. |
 | 4 — compras e encomendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Recebimentos e timelines conciliados. |
 | 5 — financeiro, catálogo e operação | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Indicadores, catálogo, auditoria, backup/restauração e operação verdes. |
 | 6 — migração e corte | `NAO_FEITO` | Nenhuma migração real executada. | Homologação determinística, treinamento, paralelo e aprovações de corte. |
@@ -178,3 +178,14 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - Nova suíte define venda paga e pendente, totais autoritativos, detalhe agregado, idempotência, auditoria e concorrência do último item.
 - RED válido: 14 testes anteriores PASS; os 4 novos testes falham com HTTP 404 porque `/sales` ainda não existe.
 - Próximo passo seguro: implementar a transação mínima de criação/leitura e repetir os mesmos testes.
+
+### 2026-08-30 — Bloco 3, checkpoint GREEN de criação de venda
+
+- `POST /sales` valida sessão/permissão/CSRF, recalcula preço, custo, subtotal, desconto e total em centavos inteiros e persiste decimal no PostgreSQL.
+- Venda, itens, pagamento inicial, baixas de estoque e auditoria são atômicos; variantes são bloqueadas em ordem determinística.
+- Replay da mesma chave retorna a mesma resposta sem duplicar; chave com payload diferente retorna 409. O escopo inclui o usuário para impedir leitura cruzada de resposta cacheada.
+- Venda pendente sem cliente/vencimento retorna 400; venda identificada permanece `pending` com saldo devido integral.
+- Duas vendas simultâneas do último item produziram 201/409, uma única venda/movimento e saldo final zero.
+- `pnpm --filter @erp/api test:integration`: 18 testes PASS em PostgreSQL 16; `pnpm check`: lint, tipos, 23 testes unitários e builds PASS.
+- Cobertura integral da API: 31 testes PASS; 88,08% statements, 80,99% branches, 100% functions e 91,45% lines.
+- Próximo passo seguro: ciclo TDD de pagamento posterior e histórico/listagem de vendas.

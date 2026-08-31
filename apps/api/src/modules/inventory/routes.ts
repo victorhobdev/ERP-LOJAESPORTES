@@ -12,7 +12,7 @@ const adjustmentSchema = z.object({
   reason: z.string().trim().min(1).max(500),
 })
 const listSchema = z.object({ availability: z.enum(['all', 'low']).default('all') })
-const adjustmentScope = 'inventory.manual_adjustment'
+const adjustmentAction = 'inventory.manual_adjustment'
 
 type IdempotencyRow = {
   request_hash: string
@@ -60,6 +60,7 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: Pool) {
     }
 
     const requestHash = createHash('sha256').update(JSON.stringify(parsed.data)).digest('hex')
+    const idempotencyScope = `${adjustmentAction}:${session.user_id}`
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -68,14 +69,14 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: Pool) {
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (scope, key) DO NOTHING
          RETURNING id`,
-        [randomUUID(), adjustmentScope, idempotencyKey, requestHash],
+        [randomUUID(), idempotencyScope, idempotencyKey, requestHash],
       )
 
       if (inserted.rowCount === 0) {
         const existing = await client.query<IdempotencyRow>(
           `SELECT request_hash, response_status, response_body
            FROM idempotency_keys WHERE scope = $1 AND key = $2 FOR UPDATE`,
-          [adjustmentScope, idempotencyKey],
+          [idempotencyScope, idempotencyKey],
         )
         const prior = existing.rows[0]
         if (!prior || prior.request_hash !== requestHash) {
@@ -118,12 +119,12 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: Pool) {
         `INSERT INTO inventory_movements
            (id, variant_id, type, quantity_delta, balance_after, reason, idempotency_key, user_id)
          VALUES ($1, $2, 'manual_adjustment', $3, $4, $5, $6, $7)`,
-        [movementId, parsed.data.variantId, parsed.data.quantityDelta, balanceAfter, parsed.data.reason, `${adjustmentScope}:${idempotencyKey}`, session.user_id],
+        [movementId, parsed.data.variantId, parsed.data.quantityDelta, balanceAfter, parsed.data.reason, `${idempotencyScope}:${idempotencyKey}`, session.user_id],
       )
       await client.query(
         `INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, request_id, after_data)
          VALUES ($1, $2, $3, 'product_variant', $4, $5, $6)`,
-        [randomUUID(), session.user_id, adjustmentScope, parsed.data.variantId, request.id, JSON.stringify({ quantityDelta: parsed.data.quantityDelta, balanceAfter, reason: parsed.data.reason })],
+        [randomUUID(), session.user_id, adjustmentAction, parsed.data.variantId, request.id, JSON.stringify({ quantityDelta: parsed.data.quantityDelta, balanceAfter, reason: parsed.data.reason })],
       )
 
       const response = { id: movementId, variantId: parsed.data.variantId, quantityDelta: parsed.data.quantityDelta, balanceAfter }
@@ -131,7 +132,7 @@ export function registerInventoryRoutes(app: FastifyInstance, pool: Pool) {
         `UPDATE idempotency_keys
          SET response_status = 201, response_body = $3, completed_at = now()
          WHERE scope = $1 AND key = $2`,
-        [adjustmentScope, idempotencyKey, JSON.stringify(response)],
+        [idempotencyScope, idempotencyKey, JSON.stringify(response)],
       )
       await client.query('COMMIT')
       return reply.status(201).send(response)
