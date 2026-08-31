@@ -48,7 +48,7 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | 0 — descoberta | `PARCIAL` | `AGENTS.md` fornecido na tarefa, documentos `00`–`11`, `ERP_REAL_CONTEXT.md`, `database.sql`, schema do backup local e regras críticas do legado foram lidos/confirmados. | Banco de produção, decisões operacionais/financeiras e aprovação do responsável. |
 | 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, sessão PostgreSQL, RBAC, CSRF/CORS/CSP/rate limit, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação e CI. |
 | 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas; produtos/variantes; leitura e ajuste de estoque; primeira versão do migrador de produtos com checksum, rejeições, rastreabilidade e reconciliação de `opening_balance`, validada em PostgreSQL 16 real. | Entrada por compra, demais origens de movimento e homologação contra fonte oficial. |
-| 3 — vendas | `PARCIAL` | Criação paga/pendente, detalhe e lista; totais autoritativos; baixa transacional; pagamentos posteriores; auditoria; idempotência por usuário e concorrência real verdes. | Troca, PDV e E2E. |
+| 3 — vendas | `PARCIAL` | Criação paga/pendente, detalhe/lista, totais autoritativos, baixa, pagamentos posteriores e troca imutável; auditoria, idempotência por usuário e concorrência real verdes. | PDV, aprovação de diferença financeira da troca e E2E. |
 | 4 — compras e encomendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Recebimentos e timelines conciliados. |
 | 5 — financeiro, catálogo e operação | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Indicadores, catálogo, auditoria, backup/restauração e operação verdes. |
 | 6 — migração e corte | `NAO_FEITO` | Nenhuma migração real executada. | Homologação determinística, treinamento, paralelo e aprovações de corte. |
@@ -212,3 +212,13 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - RED válido: 20 testes anteriores PASS; os 2 novos testes falham com HTTP 404 no endpoint de troca ausente.
 - Diferença financeira não será inventada: o contrato inicial exige quantidades iguais e a política monetária permanece uma decisão externa.
 - Próximo passo seguro: implementar troca transacional e agregá-la ao detalhe da venda.
+
+### 2026-08-30 — Bloco 3, checkpoint GREEN de trocas
+
+- `POST /sales/:id/exchanges` cria entidade própria, itens `returned`/`delivered`, dois movimentos e auditoria sem alterar o item histórico da venda.
+- Limite devolvido considera venda original menos trocas anteriores; replay idêntico não duplica e conteúdo diferente com a mesma chave retorna 409.
+- Concorrência com uma única unidade para entrega produziu 201/409; a requisição rejeitada reverteu também sua devolução, preservando atomicidade.
+- Detalhe da venda agora agrega trocas e respectivos snapshots de preço/custo.
+- Como a política de diferença financeira não está aprovada, valores diferentes são rejeitados por `EXCHANGE_VALUE_MISMATCH`; nenhum crédito/cobrança implícito é criado.
+- `pnpm --filter @erp/api test:integration`: 22 testes PASS em PostgreSQL 16; cobertura integral da API: 35 testes PASS, 88,03% statements, 80,13% branches, 100% functions e 91,23% lines.
+- Próximo passo seguro: iniciar Bloco 4 com pedidos de compra e recebimentos parciais, mantendo PDV/E2E para o ciclo de frontend.

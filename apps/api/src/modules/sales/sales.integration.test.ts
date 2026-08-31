@@ -235,6 +235,10 @@ describe('sales HTTP flow', () => {
     expect(repeated.json()).toEqual(first.json())
     expect(first.json()).toMatchObject({ saleId: sale.json().id, returnedUnits: 1, deliveredUnits: 1 })
 
+    const changed = await postExchange(sale.json().id, key, { ...payload, reason: 'Outro motivo sintético' })
+    expect(changed.statusCode).toBe(409)
+    expect(changed.json()).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' })
+
     const duplicateReturn = await postExchange(sale.json().id, randomUUID(), payload)
     expect(duplicateReturn.statusCode).toBe(409)
     expect(duplicateReturn.json()).toMatchObject({ code: 'RETURN_QUANTITY_EXCEEDED' })

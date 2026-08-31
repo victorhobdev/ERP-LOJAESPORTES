@@ -389,8 +389,23 @@ export function registerSalesRoutes(app: FastifyInstance, pool: Pool) {
       `SELECT id, amount::text, method, status FROM payments WHERE sale_id = $1 ORDER BY received_at, id`,
       [sale.id],
     )
+    const exchanges = await pool.query<{
+      id: string
+      reason: string
+      createdAt: string
+      items: unknown[]
+    }>(
+      `SELECT e.id, e.reason, e.created_at::text AS "createdAt",
+              jsonb_agg(jsonb_build_object(
+                'variantId', ei.variant_id, 'direction', ei.direction, 'quantity', ei.quantity,
+                'unitPrice', ei.unit_price::text, 'unitCost', ei.unit_cost::text
+              ) ORDER BY ei.created_at, ei.id) AS items
+       FROM exchanges e JOIN exchange_items ei ON ei.exchange_id = e.id
+       WHERE e.sale_id = $1 GROUP BY e.id ORDER BY e.created_at, e.id`,
+      [sale.id],
+    )
     const paidCents = payments.rows.filter(({ status }) => status === 'confirmed').reduce((total, payment) => total + toCents(payment.amount), 0n)
-    return reply.send({ ...sale, amountDue: formatCents(toCents(sale.finalAmount) - paidCents), items: items.rows, payments: payments.rows })
+    return reply.send({ ...sale, amountDue: formatCents(toCents(sale.finalAmount) - paidCents), items: items.rows, payments: payments.rows, exchanges: exchanges.rows })
   })
 }
 

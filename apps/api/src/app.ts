@@ -8,6 +8,7 @@ import type { Pool } from 'pg'
 import { registerAuthRoutes } from './modules/auth/routes.js'
 import { registerInventoryRoutes } from './modules/inventory/routes.js'
 import { registerProductRoutes } from './modules/products/routes.js'
+import { registerExchangeRoutes } from './modules/sales/exchange-routes.js'
 import { registerSalesRoutes } from './modules/sales/routes.js'
 
 type BuildAppOptions = {
@@ -59,6 +60,7 @@ export function buildApp(options: BuildAppOptions = {}) {
       registerProductRoutes(authScope, options.pool!)
       registerInventoryRoutes(authScope, options.pool!)
       registerSalesRoutes(authScope, options.pool!)
+      registerExchangeRoutes(authScope, options.pool!)
     })
   }
 
