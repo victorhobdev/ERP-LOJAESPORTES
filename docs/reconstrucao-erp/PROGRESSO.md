@@ -136,3 +136,10 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - `pnpm check`: PASS para lint, tipos, 23 testes unitários totais e builds.
 - Risco residual: limite atual é por IP em memória do processo; limite por usuário/armazenamento compartilhado será necessário antes de múltiplas instâncias.
 - Próximo passo seguro: CI reproduzível e ciclo de produtos/estoque com transações, autorização e idempotência.
+
+### 2026-08-30 — Bloco 2, checkpoint RED de produtos e estoque
+
+- 4 testes de integração adicionados para autenticação, criação/agregação, duplicidade, ajuste auditado, idempotência, saldo insuficiente e concorrência.
+- RED válido: todas as chamadas novas retornam 404 porque `/products` e `/inventory` ainda não existem; 7 testes anteriores de PostgreSQL/autenticação continuam verdes.
+- Fixtures usam saldo e usuários exclusivamente sintéticos em schema descartável.
+- Próximo passo seguro: implementar contratos, autenticação compartilhada e rotas transacionais mínimas para os mesmos testes.
