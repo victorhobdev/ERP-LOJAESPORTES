@@ -222,3 +222,10 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - Como a política de diferença financeira não está aprovada, valores diferentes são rejeitados por `EXCHANGE_VALUE_MISMATCH`; nenhum crédito/cobrança implícito é criado.
 - `pnpm --filter @erp/api test:integration`: 22 testes PASS em PostgreSQL 16; cobertura integral da API: 35 testes PASS, 88,03% statements, 80,13% branches, 100% functions e 91,23% lines.
 - Próximo passo seguro: iniciar Bloco 4 com pedidos de compra e recebimentos parciais, mantendo PDV/E2E para o ciclo de frontend.
+
+### 2026-08-30 — Bloco 4, checkpoint RED de compras
+
+- Nova suíte define pedido realizado, cálculo autoritativo, dois recebimentos parciais, custo médio, idempotência, detalhe conciliado e concorrência sobre a quantidade pendente.
+- RED válido: 22 testes anteriores PASS; os 3 novos testes falham com HTTP 404 porque `/purchase-orders` ainda não existe.
+- Cancelamento permanece fora deste ciclo até aprovação do estado oficial divergente no legado.
+- Próximo passo seguro: implementar pedido/recebimento mínimos e repetir exatamente os mesmos testes.
