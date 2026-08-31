@@ -240,3 +240,9 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - `pnpm --filter @erp/api test:integration`: 26 testes PASS em PostgreSQL 16; cobertura integral da API: 39 testes PASS, 88,34% statements, 80,57% branches, 100% functions e 91,77% lines.
 - Cancelamento continua bloqueado pela decisão externa sobre o conjunto oficial de estados.
 - Próximo passo seguro: ciclo TDD de encomendas de cliente e timeline de status.
+
+### 2026-08-30 — Bloco 4, checkpoint RED de encomendas
+
+- Nova suíte define criação livre sem reserva/compra, replay, transições ordenadas, detalhe com timeline e cancelamento motivado.
+- RED válido: 26 testes anteriores PASS; os 3 novos testes falham porque `/customer-orders` ainda não existe.
+- Próximo passo seguro: implementar criação e máquina de estados mínima, sem efeitos automáticos em compra/estoque.

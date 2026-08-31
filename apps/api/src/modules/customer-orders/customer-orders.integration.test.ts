@@ -1,0 +1,133 @@
+import { randomUUID } from 'node:crypto'
+
+import { Pool } from 'pg'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+
+import { buildApp } from '../../app.js'
+import { hashSecret } from '../../shared/auth/session.js'
+import { applyMigrations } from '../../shared/db/migrate.js'
+
+const connectionString = process.env['TEST_DATABASE_URL']
+if (!connectionString) throw new Error('TEST_DATABASE_URL is required for PostgreSQL integration tests.')
+
+describe('customer orders HTTP flow', () => {
+  const adminPool = new Pool({ connectionString, max: 1 })
+  const schema = `erp2_test_${randomUUID().replaceAll('-', '')}`
+  const sessionToken = randomUUID()
+  const csrfToken = randomUUID()
+  const managerId = randomUUID()
+  const customerId = randomUUID()
+  let pool: Pool
+  let app: ReturnType<typeof buildApp>
+
+  beforeAll(async () => {
+    const current = await adminPool.query<{ current_database: string }>('SELECT current_database()')
+    if (current.rows[0]?.current_database !== 'erp2_test') throw new Error('Integration tests refuse to run outside erp2_test.')
+    await adminPool.query(`CREATE SCHEMA "${schema}"`)
+    pool = new Pool({ connectionString, max: 6, options: `-c search_path=${schema}` })
+    await applyMigrations(pool)
+    await pool.query(
+      `INSERT INTO users (id, username, display_name, password_hash, role_id)
+       VALUES ($1, 'gestor.encomendas', 'Gestor Encomendas', 'unused-in-this-test', $2)`,
+      [managerId, '00000000-0000-4000-8000-000000000003'],
+    )
+    await pool.query('INSERT INTO customers (id, name, contact) VALUES ($1, $2, $3)', [customerId, 'Cliente Encomenda', 'fixture'])
+    await pool.query(
+      `INSERT INTO sessions (id, user_id, token_hash, csrf_hash, expires_at)
+       VALUES ($1, $2, $3, $4, now() + interval '1 hour')`,
+      [randomUUID(), managerId, hashSecret(sessionToken), hashSecret(csrfToken)],
+    )
+    app = buildApp({ pool, logger: false, secureCookies: false })
+    await app.ready()
+  }, 30_000)
+
+  afterAll(async () => {
+    await app?.close()
+    await pool?.end()
+    if (schema.startsWith('erp2_test_')) await adminPool.query(`DROP SCHEMA "${schema}" CASCADE`)
+    await adminPool.end()
+  })
+
+  it('requires authentication for customer order creation', async () => {
+    const response = await app.inject({ method: 'POST', url: '/customer-orders', payload: {} })
+    expect(response.statusCode).toBe(401)
+    expect(response.json()).toMatchObject({ code: 'UNAUTHENTICATED' })
+  })
+
+  it('creates a free-description order and preserves every valid status transition', async () => {
+    const key = randomUUID()
+    const payload = {
+      customerId,
+      club: 'Flamengo',
+      model: 'Modelo sob encomenda',
+      type: 'Masculina',
+      size: 'M',
+      notes: 'Fixture sem variante associada',
+    }
+    const created = await postOrder(key, payload)
+    const replay = await postOrder(key, payload)
+    expect(created.statusCode).toBe(201)
+    expect(replay.json()).toEqual(created.json())
+    expect(created.json()).toMatchObject({ status: 'pending', variantId: null, linkedPurchaseOrderId: null })
+
+    const invalid = await patchStatus(created.json().id, randomUUID(), { status: 'delivered' })
+    expect(invalid.statusCode).toBe(409)
+    expect(invalid.json()).toMatchObject({ code: 'INVALID_STATUS_TRANSITION' })
+
+    for (const status of ['supplier_ordered', 'product_arrived', 'delivered']) {
+      const response = await patchStatus(created.json().id, randomUUID(), { status })
+      expect(response.statusCode).toBe(200)
+      expect(response.json()).toMatchObject({ status })
+    }
+
+    const detail = await app.inject({ method: 'GET', url: `/customer-orders/${created.json().id}`, headers: { cookie: authCookie() } })
+    expect(detail.statusCode).toBe(200)
+    expect(detail.json()).toMatchObject({ id: created.json().id, status: 'delivered' })
+    expect(detail.json().timeline.map((event: { toStatus: string }) => event.toStatus)).toEqual([
+      'pending', 'supplier_ordered', 'product_arrived', 'delivered',
+    ])
+    const sideEffects = await pool.query<{ purchases: string; movements: string; audits: string }>(
+      `SELECT
+         (SELECT count(*) FROM purchase_orders) AS purchases,
+         (SELECT count(*) FROM inventory_movements) AS movements,
+         (SELECT count(*) FROM audit_log WHERE entity_id = $1::text AND action LIKE 'customer_order.%') AS audits`,
+      [created.json().id],
+    )
+    expect(sideEffects.rows[0]).toEqual({ purchases: '0', movements: '0', audits: '4' })
+  })
+
+  it('requires a reason when cancelling and records it in the timeline', async () => {
+    const created = await postOrder(randomUUID(), {
+      customerId,
+      club: 'Palmeiras',
+      model: 'Away',
+      type: 'Feminina',
+      size: 'G',
+    })
+    expect(created.statusCode).toBe(201)
+    const withoutReason = await patchStatus(created.json().id, randomUUID(), { status: 'cancelled' })
+    expect(withoutReason.statusCode).toBe(400)
+    expect(withoutReason.json()).toMatchObject({ code: 'CANCELLATION_REASON_REQUIRED' })
+
+    const cancelled = await patchStatus(created.json().id, randomUUID(), { status: 'cancelled', reason: 'Cliente desistiu na fixture' })
+    expect(cancelled.statusCode).toBe(200)
+    const detail = await app.inject({ method: 'GET', url: `/customer-orders/${created.json().id}`, headers: { cookie: authCookie() } })
+    expect(detail.json().timeline.at(-1)).toMatchObject({ fromStatus: 'pending', toStatus: 'cancelled', reason: 'Cliente desistiu na fixture' })
+  })
+
+  function postOrder(key: string, payload: Record<string, unknown>) {
+    return app.inject({ method: 'POST', url: '/customer-orders', payload, headers: authHeaders(key) })
+  }
+
+  function patchStatus(id: string, key: string, payload: Record<string, unknown>) {
+    return app.inject({ method: 'PATCH', url: `/customer-orders/${id}/status`, payload, headers: authHeaders(key) })
+  }
+
+  function authHeaders(key: string) {
+    return { cookie: authCookie(), 'x-csrf-token': csrfToken, 'idempotency-key': key }
+  }
+
+  function authCookie() {
+    return `erp_session=${encodeURIComponent(sessionToken)}; erp_csrf=${encodeURIComponent(csrfToken)}`
+  }
+})
