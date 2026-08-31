@@ -48,7 +48,7 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | 0 — descoberta | `PARCIAL` | `AGENTS.md` fornecido na tarefa, documentos `00`–`11`, `ERP_REAL_CONTEXT.md`, `database.sql`, schema do backup local e regras críticas do legado foram lidos/confirmados. | Banco de produção, decisões operacionais/financeiras e aprovação do responsável. |
 | 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, sessão PostgreSQL, RBAC, CSRF/CORS/CSP/rate limit, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação e CI. |
 | 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas; produtos/variantes; leitura e ajuste de estoque; primeira versão do migrador de produtos com checksum, rejeições, rastreabilidade e reconciliação de `opening_balance`, validada em PostgreSQL 16 real. | Entrada por compra, demais origens de movimento e homologação contra fonte oficial. |
-| 3 — vendas | `PARCIAL` | Criação paga/pendente e detalhe; preço/custo/totais autoritativos; baixa transacional; auditoria; idempotência por usuário e concorrência real verdes. | Lista/filtros, pagamentos posteriores, troca, PDV e E2E. |
+| 3 — vendas | `PARCIAL` | Criação paga/pendente, detalhe e lista; totais autoritativos; baixa transacional; pagamentos posteriores; auditoria; idempotência por usuário e concorrência real verdes. | Troca, PDV e E2E. |
 | 4 — compras e encomendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Recebimentos e timelines conciliados. |
 | 5 — financeiro, catálogo e operação | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Indicadores, catálogo, auditoria, backup/restauração e operação verdes. |
 | 6 — migração e corte | `NAO_FEITO` | Nenhuma migração real executada. | Homologação determinística, treinamento, paralelo e aprovações de corte. |
@@ -195,3 +195,13 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - Novos cenários definem dois pagamentos append-only, replay idempotente, transição `pending` → `partially_paid` → `paid`, lista filtrada e concorrência sobre saldo devido.
 - RED válido: 18 testes anteriores PASS; os 2 novos testes falham com HTTP 404 no endpoint de pagamento ainda ausente.
 - Próximo passo seguro: implementar pagamento posterior com bloqueio da venda e listagem paginada mínima.
+
+### 2026-08-30 — Bloco 3, checkpoint GREEN de pagamentos e histórico
+
+- `POST /sales/:id/payments` bloqueia a venda, soma somente pagamentos confirmados e cria um novo registro; histórico anterior não é sobrescrito.
+- Dois pagamentos levaram saldo 150,00 → 100,00 → 0,00 e estado `pending` → `partially_paid` → `paid`; replay não duplicou e chave alterada retornou 409.
+- Duas cobranças simultâneas de 100,00 sobre saldo 150,00 produziram 201/409, um único pagamento confirmado e saldo devido 50,00.
+- Pagamentos não movimentam estoque novamente; cada inclusão gera auditoria `sale.payment`.
+- `GET /sales` filtra status e limita paginação a 100; detalhe existente passou a refletir pagamentos e saldo atuais.
+- `pnpm --filter @erp/api test:integration`: 20 testes PASS em PostgreSQL 16; cobertura integral da API: 33 testes PASS, 88,12% statements, 80,76% branches, 100% functions e 91,54% lines.
+- Próximo passo seguro: ciclo TDD de troca auditável com devolução/retirada atômicas e concorrência.

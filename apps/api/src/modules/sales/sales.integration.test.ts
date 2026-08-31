@@ -156,6 +156,10 @@ describe('sales HTTP flow', () => {
     expect(repeated.json()).toEqual(first.json())
     expect(first.json()).toMatchObject({ saleId: sale.json().id, status: 'partially_paid', amountDue: '100.00' })
 
+    const changed = await postPayment(sale.json().id, firstKey, { amount: '60.00', method: 'pix' })
+    expect(changed.statusCode).toBe(409)
+    expect(changed.json()).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' })
+
     const final = await postPayment(sale.json().id, randomUUID(), { amount: '100.00', method: 'cash' })
     expect(final.statusCode).toBe(201)
     expect(final.json()).toMatchObject({ status: 'paid', amountDue: '0.00' })
@@ -167,6 +171,10 @@ describe('sales HTTP flow', () => {
     const list = await app.inject({ method: 'GET', url: '/sales?status=paid&limit=20', headers: { cookie: authCookie() } })
     expect(list.statusCode).toBe(200)
     expect(list.json().items).toEqual(expect.arrayContaining([expect.objectContaining({ id: sale.json().id, status: 'paid' })]))
+
+    const invalidList = await app.inject({ method: 'GET', url: '/sales?limit=101', headers: { cookie: authCookie() } })
+    expect(invalidList.statusCode).toBe(400)
+    expect(invalidList.json()).toMatchObject({ code: 'VALIDATION_ERROR' })
 
     const state = await pool.query<{ payments: string; audits: string; stock_quantity: number }>(
       `SELECT
@@ -200,6 +208,10 @@ describe('sales HTTP flow', () => {
       [sale.json().id],
     )
     expect(totals.rows[0]).toEqual({ paid: '100.00', payments: '1', status: 'partially_paid' })
+
+    const missing = await postPayment(randomUUID(), randomUUID(), { amount: '10.00', method: 'cash' })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json()).toMatchObject({ code: 'SALE_NOT_FOUND' })
   })
 
   function postSale(key: string, payload: Record<string, unknown>) {

@@ -22,6 +22,12 @@ const saleSchema = z.object({
   }
 })
 const idSchema = z.object({ id: z.string().uuid() })
+const paymentSchema = z.object({ amount: money.refine((value) => toCents(value) > 0n), method: z.enum(paymentMethods) })
+const salesListSchema = z.object({
+  status: z.enum(['paid', 'pending', 'partially_paid', 'reversed']).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+})
 const saleCreateAction = 'sales.create'
 const maxMoneyCents = 99_999_999_999_999n
 
@@ -205,6 +211,149 @@ export function registerSalesRoutes(app: FastifyInstance, pool: Pool) {
     }
   })
 
+  app.post('/sales/:id/payments', async (request, reply) => {
+    const session = await requirePermission(pool, request, reply, 'sales:payment')
+    if (!session) return
+    if (!hasValidCsrf(session, request)) return sendError(reply, request, 403, 'INVALID_CSRF', 'Token CSRF inválido.')
+
+    const params = idSchema.safeParse(request.params)
+    const payment = paymentSchema.safeParse(request.body)
+    const idempotencyKey = request.headers['idempotency-key']
+    if (!params.success || !payment.success || typeof idempotencyKey !== 'string' || idempotencyKey.length < 1 || idempotencyKey.length > 200) {
+      return sendError(reply, request, 400, 'VALIDATION_ERROR', 'Revise os dados do pagamento e a chave de idempotência.')
+    }
+
+    const idempotencyScope = `sales.payment:${session.user_id}:${params.data.id}`
+    const requestHash = createHash('sha256').update(JSON.stringify(payment.data)).digest('hex')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const inserted = await client.query(
+        `INSERT INTO idempotency_keys (id, scope, key, request_hash)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (scope, key) DO NOTHING
+         RETURNING id`,
+        [randomUUID(), idempotencyScope, idempotencyKey, requestHash],
+      )
+      if (inserted.rowCount === 0) {
+        const existing = await client.query<IdempotencyRow>(
+          `SELECT request_hash, response_status, response_body
+           FROM idempotency_keys WHERE scope = $1 AND key = $2 FOR UPDATE`,
+          [idempotencyScope, idempotencyKey],
+        )
+        const prior = existing.rows[0]
+        if (!prior || prior.request_hash !== requestHash) {
+          await client.query('ROLLBACK')
+          return sendError(reply, request, 409, 'IDEMPOTENCY_KEY_REUSED', 'A chave de idempotência já foi usada em outra requisição.')
+        }
+        if (prior.response_status && prior.response_body !== null) {
+          await client.query('COMMIT')
+          return reply.status(prior.response_status).send(prior.response_body)
+        }
+      }
+
+      const saleResult = await client.query<{ final_amount: string; status: string }>(
+        'SELECT final_amount, status FROM sales WHERE id = $1 FOR UPDATE',
+        [params.data.id],
+      )
+      const sale = saleResult.rows[0]
+      if (!sale) {
+        await client.query('ROLLBACK')
+        return sendError(reply, request, 404, 'SALE_NOT_FOUND', 'Venda não encontrada.')
+      }
+      if (sale.status === 'reversed') {
+        await client.query('ROLLBACK')
+        return sendError(reply, request, 409, 'SALE_REVERSED', 'Venda estornada não pode receber pagamento.')
+      }
+
+      const paidResult = await client.query<{ amount: string }>(
+        `SELECT coalesce(sum(amount), 0)::text AS amount FROM payments
+         WHERE sale_id = $1 AND status = 'confirmed'`,
+        [params.data.id],
+      )
+      const finalCents = toCents(sale.final_amount)
+      const paidCents = toCents(paidResult.rows[0]!.amount)
+      const paymentCents = toCents(payment.data.amount)
+      const amountDue = finalCents - paidCents
+      if (paymentCents > amountDue) {
+        await client.query('ROLLBACK')
+        return sendError(reply, request, 409, 'PAYMENT_EXCEEDS_AMOUNT_DUE', 'O pagamento excede o saldo devido.', {
+          amountDue: formatCents(amountDue),
+        })
+      }
+
+      const paymentId = randomUUID()
+      await client.query(
+        `INSERT INTO payments (id, sale_id, received_by, amount, method, idempotency_key)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [paymentId, params.data.id, session.user_id, payment.data.amount, payment.data.method, `${idempotencyScope}:${idempotencyKey}`],
+      )
+      const remainingCents = amountDue - paymentCents
+      const status = remainingCents === 0n ? 'paid' : 'partially_paid'
+      await client.query('UPDATE sales SET status = $2, updated_at = now() WHERE id = $1', [params.data.id, status])
+      await client.query(
+        `INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, request_id, after_data)
+         VALUES ($1, $2, 'sale.payment', 'sale', $3, $4, $5)`,
+        [randomUUID(), session.user_id, params.data.id, request.id, JSON.stringify({ paymentId, amount: payment.data.amount, method: payment.data.method, status, amountDue: formatCents(remainingCents) })],
+      )
+
+      const response = { id: paymentId, saleId: params.data.id, status, amountDue: formatCents(remainingCents) }
+      await client.query(
+        `UPDATE idempotency_keys SET response_status = 201, response_body = $3, completed_at = now()
+         WHERE scope = $1 AND key = $2`,
+        [idempotencyScope, idempotencyKey, JSON.stringify(response)],
+      )
+      await client.query('COMMIT')
+      return reply.status(201).send(response)
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  })
+
+  app.get('/sales', async (request, reply) => {
+    if (!await requirePermission(pool, request, reply, 'sales:read')) return
+    const parsed = salesListSchema.safeParse(request.query)
+    if (!parsed.success) return sendError(reply, request, 400, 'VALIDATION_ERROR', 'Filtros de venda inválidos.')
+
+    const offset = (parsed.data.page - 1) * parsed.data.limit
+    const result = await pool.query<{
+      id: string
+      customerId: string | null
+      status: string
+      finalAmount: string
+      amountDue: string
+      createdAt: string
+      total: string
+    }>(
+      `SELECT s.id, s.customer_id AS "customerId", s.status,
+              s.final_amount::text AS "finalAmount",
+              (s.final_amount - coalesce((SELECT sum(p.amount) FROM payments p WHERE p.sale_id = s.id AND p.status = 'confirmed'), 0))::text AS "amountDue",
+              s.created_at::text AS "createdAt", count(*) OVER()::text AS total
+       FROM sales s
+       WHERE ($1::text IS NULL OR s.status = $1)
+       ORDER BY s.created_at DESC, s.id DESC
+       LIMIT $2 OFFSET $3`,
+      [parsed.data.status ?? null, parsed.data.limit, offset],
+    )
+    const total = Number(result.rows[0]?.total ?? 0)
+    return reply.send({
+      items: result.rows.map((sale) => ({
+        id: sale.id,
+        customerId: sale.customerId,
+        status: sale.status,
+        finalAmount: sale.finalAmount,
+        amountDue: sale.amountDue,
+        createdAt: sale.createdAt,
+      })),
+      total,
+      page: parsed.data.page,
+      limit: parsed.data.limit,
+    })
+  })
+
   app.get('/sales/:id', async (request, reply) => {
     if (!await requirePermission(pool, request, reply, 'sales:read')) return
     const parsed = idSchema.safeParse(request.params)
@@ -246,7 +395,7 @@ export function registerSalesRoutes(app: FastifyInstance, pool: Pool) {
 }
 
 function toCents(value: string): bigint {
-  const [whole, fraction] = value.split('.') as [string, string]
+  const [whole = '0', fraction = '00'] = value.split('.')
   return BigInt(whole) * 100n + BigInt(fraction)
 }
 
