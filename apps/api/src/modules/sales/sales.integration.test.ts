@@ -139,6 +139,69 @@ describe('sales HTTP flow', () => {
     expect(state.rows[0]).toEqual({ stock_quantity: 0, sales: '1', movements: '1' })
   })
 
+  it('appends idempotent later payments and transitions pending through partially paid to paid', async () => {
+    const variantId = await insertVariant(2)
+    const customerId = await insertCustomer()
+    const sale = await postSale(randomUUID(), {
+      customerId,
+      paymentDueDate: '2026-09-30',
+      items: [{ variantId, quantity: 1 }],
+      discountAmount: '0.00',
+    })
+    const firstKey = randomUUID()
+    const first = await postPayment(sale.json().id, firstKey, { amount: '50.00', method: 'pix' })
+    const repeated = await postPayment(sale.json().id, firstKey, { amount: '50.00', method: 'pix' })
+
+    expect(first.statusCode).toBe(201)
+    expect(repeated.json()).toEqual(first.json())
+    expect(first.json()).toMatchObject({ saleId: sale.json().id, status: 'partially_paid', amountDue: '100.00' })
+
+    const final = await postPayment(sale.json().id, randomUUID(), { amount: '100.00', method: 'cash' })
+    expect(final.statusCode).toBe(201)
+    expect(final.json()).toMatchObject({ status: 'paid', amountDue: '0.00' })
+
+    const detail = await app.inject({ method: 'GET', url: `/sales/${sale.json().id}`, headers: { cookie: authCookie() } })
+    expect(detail.json().payments).toHaveLength(2)
+    expect(detail.json()).toMatchObject({ status: 'paid', amountDue: '0.00' })
+
+    const list = await app.inject({ method: 'GET', url: '/sales?status=paid&limit=20', headers: { cookie: authCookie() } })
+    expect(list.statusCode).toBe(200)
+    expect(list.json().items).toEqual(expect.arrayContaining([expect.objectContaining({ id: sale.json().id, status: 'paid' })]))
+
+    const state = await pool.query<{ payments: string; audits: string; stock_quantity: number }>(
+      `SELECT
+         (SELECT count(*) FROM payments WHERE sale_id = $1) AS payments,
+         (SELECT count(*) FROM audit_log WHERE entity_id = $1::text AND action = 'sale.payment') AS audits,
+         (SELECT stock_quantity FROM product_variants WHERE id = $2) AS stock_quantity`,
+      [sale.json().id, variantId],
+    )
+    expect(state.rows[0]).toEqual({ payments: '2', audits: '2', stock_quantity: 1 })
+  })
+
+  it('serializes concurrent later payments so confirmed value never exceeds the amount due', async () => {
+    const variantId = await insertVariant(1)
+    const customerId = await insertCustomer()
+    const sale = await postSale(randomUUID(), {
+      customerId,
+      paymentDueDate: '2026-09-30',
+      items: [{ variantId, quantity: 1 }],
+      discountAmount: '0.00',
+    })
+    const request = () => postPayment(sale.json().id, randomUUID(), { amount: '100.00', method: 'pix' })
+
+    const responses = await Promise.all([request(), request()])
+    expect(responses.map(({ statusCode }) => statusCode).sort()).toEqual([201, 409])
+    expect(responses.find(({ statusCode }) => statusCode === 409)?.json()).toMatchObject({ code: 'PAYMENT_EXCEEDS_AMOUNT_DUE' })
+
+    const totals = await pool.query<{ paid: string; payments: string; status: string }>(
+      `SELECT coalesce(sum(p.amount), 0)::text AS paid, count(p.id)::text AS payments, max(s.status) AS status
+       FROM sales s LEFT JOIN payments p ON p.sale_id = s.id AND p.status = 'confirmed'
+       WHERE s.id = $1`,
+      [sale.json().id],
+    )
+    expect(totals.rows[0]).toEqual({ paid: '100.00', payments: '1', status: 'partially_paid' })
+  })
+
   function postSale(key: string, payload: Record<string, unknown>) {
     return app.inject({
       method: 'POST',
@@ -150,6 +213,21 @@ describe('sales HTTP flow', () => {
 
   function authCookie() {
     return `erp_session=${encodeURIComponent(sessionToken)}; erp_csrf=${encodeURIComponent(csrfToken)}`
+  }
+
+  function postPayment(saleId: string, key: string, payload: Record<string, unknown>) {
+    return app.inject({
+      method: 'POST',
+      url: `/sales/${saleId}/payments`,
+      payload,
+      headers: { cookie: authCookie(), 'x-csrf-token': csrfToken, 'idempotency-key': key },
+    })
+  }
+
+  async function insertCustomer(): Promise<string> {
+    const id = randomUUID()
+    await pool.query('INSERT INTO customers (id, name) VALUES ($1, $2)', [id, `Cliente ${id}`])
+    return id
   }
 
   async function insertVariant(stock: number): Promise<string> {

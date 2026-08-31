@@ -189,3 +189,9 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - `pnpm --filter @erp/api test:integration`: 18 testes PASS em PostgreSQL 16; `pnpm check`: lint, tipos, 23 testes unitários e builds PASS.
 - Cobertura integral da API: 31 testes PASS; 88,08% statements, 80,99% branches, 100% functions e 91,45% lines.
 - Próximo passo seguro: ciclo TDD de pagamento posterior e histórico/listagem de vendas.
+
+### 2026-08-30 — Bloco 3, checkpoint RED de pagamentos e histórico
+
+- Novos cenários definem dois pagamentos append-only, replay idempotente, transição `pending` → `partially_paid` → `paid`, lista filtrada e concorrência sobre saldo devido.
+- RED válido: 18 testes anteriores PASS; os 2 novos testes falham com HTTP 404 no endpoint de pagamento ainda ausente.
+- Próximo passo seguro: implementar pagamento posterior com bloqueio da venda e listagem paginada mínima.
