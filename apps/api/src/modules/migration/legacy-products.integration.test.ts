@@ -83,22 +83,60 @@ describe('legacy product migration', () => {
     const input = {
       sourceName: 'fixture-idempotente',
       actorUserId,
-      rows: [legacyRow({ legacyId: 20, club: 'Palmeiras', stockQuantity: 5 })],
+      rows: [
+        legacyRow({ legacyId: 20, club: 'Palmeiras', stockQuantity: 5 }),
+        legacyRow({ legacyId: 21, club: 'Palmeiras', size: 'G' }),
+      ],
     }
 
     const first = await migrateLegacyProducts(pool, input)
-    const second = await migrateLegacyProducts(pool, input)
+    const second = await migrateLegacyProducts(pool, { ...input, rows: [...input.rows].reverse() })
 
     expect(first.reused).toBe(false)
     expect(second).toEqual({ ...first, reused: true })
     const counts = await pool.query<{ runs: string; variants: string; movements: string }>(
       `SELECT
          (SELECT count(*) FROM migration_runs WHERE source_name = $1) AS runs,
-         (SELECT count(*) FROM product_variants WHERE legacy_id = 20) AS variants,
+         (SELECT count(*) FROM product_variants WHERE legacy_id IN (20, 21)) AS variants,
          (SELECT count(*) FROM inventory_movements WHERE idempotency_key = $2) AS movements`,
       [input.sourceName, `${input.sourceName}:produtos:20:opening_balance`],
     )
-    expect(counts.rows[0]).toEqual({ runs: '1', variants: '1', movements: '1' })
+    expect(counts.rows[0]).toEqual({ runs: '1', variants: '2', movements: '1' })
+  })
+
+  it('classifies target conflicts without overwriting existing variants', async () => {
+    const productId = randomUUID()
+    const variantId = randomUUID()
+    await pool.query('INSERT INTO products (id, club, model) VALUES ($1, $2, $3)', [productId, 'Corinthians', 'Third 2026'])
+    await pool.query(
+      `INSERT INTO product_variants
+         (id, product_id, legacy_id, type, size, sku, sale_price, current_cost)
+       VALUES ($1, $2, 30, 'Masculina', 'M', $3, 100.00, 50.00)`,
+      [variantId, productId, randomUUID()],
+    )
+
+    const report = await migrateLegacyProducts(pool, {
+      sourceName: 'fixture-conflitos',
+      actorUserId,
+      rows: [
+        legacyRow({ legacyId: 30, club: 'Santos', model: 'Away 2026' }),
+        legacyRow({ legacyId: 31, club: 'Corinthians', model: 'Third 2026' }),
+      ],
+    })
+
+    expect(report.counts).toMatchObject({ acceptedVariants: 0, rejectedRows: 2 })
+    const rejections = await pool.query<{ reason_code: string }>(
+      `SELECT reason_code FROM migration_rejections r
+       JOIN migration_runs m ON m.id = r.migration_run_id
+       WHERE m.source_name = 'fixture-conflitos'
+       ORDER BY reason_code`,
+    )
+    expect(rejections.rows).toEqual([
+      { reason_code: 'LEGACY_ID_ALREADY_MIGRATED' },
+      { reason_code: 'TARGET_VARIANT_CONFLICT' },
+    ])
+    const preserved = await pool.query<{ stock_quantity: number }>('SELECT stock_quantity FROM product_variants WHERE id = $1', [variantId])
+    expect(preserved.rows[0]?.stock_quantity).toBe(0)
   })
 })
 

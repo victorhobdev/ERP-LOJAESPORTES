@@ -47,7 +47,7 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | --- | --- | --- | --- |
 | 0 — descoberta | `PARCIAL` | `AGENTS.md` fornecido na tarefa, documentos `00`–`11`, `ERP_REAL_CONTEXT.md`, `database.sql`, schema do backup local e regras críticas do legado foram lidos/confirmados. | Banco de produção, decisões operacionais/financeiras e aprovação do responsável. |
 | 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, sessão PostgreSQL, RBAC, CSRF/CORS/CSP/rate limit, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação e CI. |
-| 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas; produtos/variantes; leitura de estoque; ajuste manual autorizado, auditado, idempotente e serializado; constraints de saldo/dinheiro; runner com checksum e rollback validados em PostgreSQL 16 real. | Demais origens de movimento, migrador legado e reconciliação. |
+| 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas; produtos/variantes; leitura e ajuste de estoque; primeira versão do migrador de produtos com checksum, rejeições, rastreabilidade e reconciliação de `opening_balance`, validada em PostgreSQL 16 real. | Entrada por compra, demais origens de movimento e homologação contra fonte oficial. |
 | 3 — vendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Fluxos, concorrência e idempotência verdes. |
 | 4 — compras e encomendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Recebimentos e timelines conciliados. |
 | 5 — financeiro, catálogo e operação | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Indicadores, catálogo, auditoria, backup/restauração e operação verdes. |
@@ -161,3 +161,14 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - RED válido: 11 testes anteriores PASS; apenas a nova suíte falha porque `legacy-products.js` ainda não existe.
 - A fonte é uma coleção de fixtures sintéticas normalizadas. Nenhum backup ou banco MySQL foi lido, escrito ou inferido como produção.
 - Próximo passo seguro: implementar a biblioteca transacional mínima e repetir exatamente a mesma suíte.
+
+### 2026-08-30 — Bloco 2, checkpoint GREEN do migrador de produtos
+
+- Biblioteca transacional recebe linhas normalizadas, valida sem corrigir silenciosamente, calcula checksum independente da ordem e deriva IDs/SKUs estáveis da origem.
+- Variantes válidas preservam `legacy_id`; saldo inicial é inserido junto de `opening_balance`. No cenário sintético, saldo total 3 conciliou exatamente com movimentos 3.
+- Linhas inválidas, duplicatas na origem e colisões no destino são classificadas em `migration_rejections`; cadastro pré-existente permaneceu inalterado.
+- Reexecução do mesmo snapshot em ordem invertida reutilizou 1 `migration_run`, sem duplicar as 2 variantes nem o movimento.
+- `pnpm --filter @erp/api test:integration`: 14 testes PASS em PostgreSQL 16; `pnpm check`: lint, tipos, 23 testes unitários e builds PASS.
+- Cobertura integral da API: 27 testes PASS; 89,48% statements, 81,93% branches, 100% functions e 92,92% lines.
+- Limite explícito: esta versão não lê MySQL e não foi executada contra backup real; homologação depende da confirmação da fonte oficial.
+- Próximo passo seguro: completar a entrada de estoque pelo fluxo de recebimento de compras ou iniciar o ciclo de vendas, preservando o bloqueio da migração real.
