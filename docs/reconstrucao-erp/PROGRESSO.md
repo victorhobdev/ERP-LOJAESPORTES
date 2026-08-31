@@ -172,3 +172,9 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - Cobertura integral da API: 27 testes PASS; 89,48% statements, 81,93% branches, 100% functions e 92,92% lines.
 - Limite explícito: esta versão não lê MySQL e não foi executada contra backup real; homologação depende da confirmação da fonte oficial.
 - Próximo passo seguro: completar a entrada de estoque pelo fluxo de recebimento de compras ou iniciar o ciclo de vendas, preservando o bloqueio da migração real.
+
+### 2026-08-30 — Bloco 3, checkpoint RED de criação de venda
+
+- Nova suíte define venda paga e pendente, totais autoritativos, detalhe agregado, idempotência, auditoria e concorrência do último item.
+- RED válido: 14 testes anteriores PASS; os 4 novos testes falham com HTTP 404 porque `/sales` ainda não existe.
+- Próximo passo seguro: implementar a transação mínima de criação/leitura e repetir os mesmos testes.
