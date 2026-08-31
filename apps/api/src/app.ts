@@ -6,6 +6,8 @@ import Fastify, { type FastifyServerOptions } from 'fastify'
 import type { Pool } from 'pg'
 
 import { registerAuthRoutes } from './modules/auth/routes.js'
+import { registerInventoryRoutes } from './modules/inventory/routes.js'
+import { registerProductRoutes } from './modules/products/routes.js'
 
 type BuildAppOptions = {
   allowedOrigins?: string[]
@@ -53,6 +55,8 @@ export function buildApp(options: BuildAppOptions = {}) {
     void app.register(async (authScope) => {
       await authScope.register(rateLimit, { global: false })
       registerAuthRoutes(authScope, options.pool!, { secureCookies: options.secureCookies ?? true })
+      registerProductRoutes(authScope, options.pool!)
+      registerInventoryRoutes(authScope, options.pool!)
     })
   }
 

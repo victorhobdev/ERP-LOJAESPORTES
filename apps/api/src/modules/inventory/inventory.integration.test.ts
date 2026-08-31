@@ -74,6 +74,10 @@ describe('products and inventory HTTP flow', () => {
     expect(created.json().variants).toHaveLength(2)
     expect(created.json().variants.every((variant: { stockQuantity: number }) => variant.stockQuantity === 0)).toBe(true)
 
+    const list = await app.inject({ method: 'GET', url: '/products', headers: { cookie: authCookie() } })
+    expect(list.statusCode).toBe(200)
+    expect(list.json().items).toEqual(expect.arrayContaining([expect.objectContaining({ id: created.json().id })]))
+
     const detail = await app.inject({
       method: 'GET', url: `/products/${created.json().id}`, headers: { cookie: authCookie() },
     })

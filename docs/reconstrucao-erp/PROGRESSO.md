@@ -47,7 +47,7 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | --- | --- | --- | --- |
 | 0 — descoberta | `PARCIAL` | `AGENTS.md` fornecido na tarefa, documentos `00`–`11`, `ERP_REAL_CONTEXT.md`, `database.sql`, schema do backup local e regras críticas do legado foram lidos/confirmados. | Banco de produção, decisões operacionais/financeiras e aprovação do responsável. |
 | 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, sessão PostgreSQL, RBAC, CSRF/CORS/CSP/rate limit, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação e CI. |
-| 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas, constraints de saldo/dinheiro, movimentos, idempotência, auditoria e migração/rejeições; runner com checksum e rollback validados em PostgreSQL 16 real. | Serviços/rotas de estoque, migrador legado e reconciliação. |
+| 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas; produtos/variantes; leitura de estoque; ajuste manual autorizado, auditado, idempotente e serializado; constraints de saldo/dinheiro; runner com checksum e rollback validados em PostgreSQL 16 real. | Demais origens de movimento, migrador legado e reconciliação. |
 | 3 — vendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Fluxos, concorrência e idempotência verdes. |
 | 4 — compras e encomendas | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Recebimentos e timelines conciliados. |
 | 5 — financeiro, catálogo e operação | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Indicadores, catálogo, auditoria, backup/restauração e operação verdes. |
@@ -143,3 +143,14 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - RED válido: todas as chamadas novas retornam 404 porque `/products` e `/inventory` ainda não existem; 7 testes anteriores de PostgreSQL/autenticação continuam verdes.
 - Fixtures usam saldo e usuários exclusivamente sintéticos em schema descartável.
 - Próximo passo seguro: implementar contratos, autenticação compartilhada e rotas transacionais mínimas para os mesmos testes.
+
+### 2026-08-30 — Bloco 2, checkpoint GREEN de produtos e estoque
+
+- Produtos lógicos e variantes foram implementados com chave de negócio case-insensitive, SKU único, dinheiro decimal por string e saldo inicial zero; leitura de lista/detalhe retorna variantes agregadas.
+- Autenticação, RBAC e CSRF foram centralizados e aplicados às novas rotas; criação de produto e ajuste de estoque geram auditoria.
+- Ajuste manual usa transação única, `SELECT ... FOR UPDATE`, guarda de saldo não negativo e chave de idempotência com hash do payload e resposta persistida.
+- Concorrência real: duas baixas simultâneas de 4 sobre saldo 5 produziram 201/409 e saldo final 1; repetição idempotente manteve um movimento e uma auditoria.
+- Revisão encontrou uma listagem ainda não exercitada; o novo teste reproduziu HTTP 500 por ordem inválida de cláusulas SQL, a consulta foi corrigida e o teste ficou verde.
+- `pnpm --filter @erp/api test:integration`: 11 testes PASS em PostgreSQL 16; `pnpm check`: lint, tipos, 23 testes unitários e builds PASS.
+- Cobertura integral da API: 24 testes PASS; 89,24% statements, 82,2% branches, 100% functions e 93,1% lines.
+- Próximo passo seguro: ciclo TDD de migração determinística de produtos/estoque legado e relatório de reconciliação, sem usar dados reais até a fonte oficial ser confirmada.
