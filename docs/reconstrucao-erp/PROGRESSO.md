@@ -49,7 +49,7 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, sessão PostgreSQL, RBAC, CSRF/CORS/CSP/rate limit, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação e CI. |
 | 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas; produtos/variantes; leitura e ajuste de estoque; primeira versão do migrador de produtos com checksum, rejeições, rastreabilidade e reconciliação de `opening_balance`, validada em PostgreSQL 16 real. | Entrada por compra, demais origens de movimento e homologação contra fonte oficial. |
 | 3 — vendas | `PARCIAL` | Criação paga/pendente, detalhe/lista, totais autoritativos, baixa, pagamentos posteriores e troca imutável; auditoria, idempotência por usuário e concorrência real verdes. | PDV, aprovação de diferença financeira da troca e E2E. |
-| 4 — compras e encomendas | `PARCIAL` | Pedido realizado e detalhe; rateio de custo; recebimentos parciais idempotentes; custo médio, estoque, movimentos e concorrência conciliados. | Cancelamento após decisão oficial; encomendas e timeline. |
+| 4 — compras e encomendas | `PARCIAL` | Compras/recebimentos conciliados; encomenda livre com vínculo opcional, máquina de estados, timeline, motivo de cancelamento, auditoria e idempotência. | Cancelamento de compra após decisão oficial; UI/E2E. |
 | 5 — financeiro, catálogo e operação | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Indicadores, catálogo, auditoria, backup/restauração e operação verdes. |
 | 6 — migração e corte | `NAO_FEITO` | Nenhuma migração real executada. | Homologação determinística, treinamento, paralelo e aprovações de corte. |
 
@@ -246,3 +246,13 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - Nova suíte define criação livre sem reserva/compra, replay, transições ordenadas, detalhe com timeline e cancelamento motivado.
 - RED válido: 26 testes anteriores PASS; os 3 novos testes falham porque `/customer-orders` ainda não existe.
 - Próximo passo seguro: implementar criação e máquina de estados mínima, sem efeitos automáticos em compra/estoque.
+
+### 2026-08-30 — Bloco 4, checkpoint GREEN de encomendas
+
+- Encomenda aceita descrição livre e vínculos opcionais; criação gera estado/evento `pending`, auditoria e replay idempotente.
+- Máquina explícita preserva `pending` → `supplier_ordered` → `product_arrived` → `delivered`; salto inválido retorna 409.
+- Cancelamento sem motivo retorna 400; motivo válido fica no registro e no evento da timeline.
+- Replay de transição não duplica evento, chave com payload diferente retorna 409 e ID inexistente retorna 404.
+- Cenário completo produziu quatro eventos/quatro auditorias e zero compras/movimentos automáticos.
+- `pnpm --filter @erp/api test:integration`: 29 testes PASS em PostgreSQL 16; cobertura integral da API: 42 testes PASS, 87,39% statements, 80,43% branches, 100% functions e 90,85% lines.
+- Próximo passo seguro: iniciar Bloco 5 por indicadores financeiros reconciliados e dashboard, antes de catálogo/backup/operação.

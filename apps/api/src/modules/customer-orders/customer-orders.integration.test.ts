@@ -69,12 +69,24 @@ describe('customer orders HTTP flow', () => {
     expect(created.statusCode).toBe(201)
     expect(replay.json()).toEqual(created.json())
     expect(created.json()).toMatchObject({ status: 'pending', variantId: null, linkedPurchaseOrderId: null })
+    const changedCreate = await postOrder(key, { ...payload, notes: 'Outro conteúdo' })
+    expect(changedCreate.statusCode).toBe(409)
+    expect(changedCreate.json()).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' })
 
     const invalid = await patchStatus(created.json().id, randomUUID(), { status: 'delivered' })
     expect(invalid.statusCode).toBe(409)
     expect(invalid.json()).toMatchObject({ code: 'INVALID_STATUS_TRANSITION' })
 
-    for (const status of ['supplier_ordered', 'product_arrived', 'delivered']) {
+    const supplierKey = randomUUID()
+    const supplierOrdered = await patchStatus(created.json().id, supplierKey, { status: 'supplier_ordered' })
+    const supplierReplay = await patchStatus(created.json().id, supplierKey, { status: 'supplier_ordered' })
+    expect(supplierOrdered.statusCode).toBe(200)
+    expect(supplierReplay.json()).toEqual(supplierOrdered.json())
+    const changedStatus = await patchStatus(created.json().id, supplierKey, { status: 'product_arrived' })
+    expect(changedStatus.statusCode).toBe(409)
+    expect(changedStatus.json()).toMatchObject({ code: 'IDEMPOTENCY_KEY_REUSED' })
+
+    for (const status of ['product_arrived', 'delivered']) {
       const response = await patchStatus(created.json().id, randomUUID(), { status })
       expect(response.statusCode).toBe(200)
       expect(response.json()).toMatchObject({ status })
@@ -113,6 +125,10 @@ describe('customer orders HTTP flow', () => {
     expect(cancelled.statusCode).toBe(200)
     const detail = await app.inject({ method: 'GET', url: `/customer-orders/${created.json().id}`, headers: { cookie: authCookie() } })
     expect(detail.json().timeline.at(-1)).toMatchObject({ fromStatus: 'pending', toStatus: 'cancelled', reason: 'Cliente desistiu na fixture' })
+
+    const missing = await patchStatus(randomUUID(), randomUUID(), { status: 'supplier_ordered' })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json()).toMatchObject({ code: 'CUSTOMER_ORDER_NOT_FOUND' })
   })
 
   function postOrder(key: string, payload: Record<string, unknown>) {
