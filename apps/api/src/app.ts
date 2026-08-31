@@ -10,6 +10,7 @@ import { registerCustomerOrderRoutes } from './modules/customer-orders/routes.js
 import { registerInventoryRoutes } from './modules/inventory/routes.js'
 import { registerProductRoutes } from './modules/products/routes.js'
 import { registerPurchaseRoutes } from './modules/purchases/routes.js'
+import { registerReportRoutes } from './modules/reports/routes.js'
 import { registerExchangeRoutes } from './modules/sales/exchange-routes.js'
 import { registerSalesRoutes } from './modules/sales/routes.js'
 
@@ -65,6 +66,7 @@ export function buildApp(options: BuildAppOptions = {}) {
       registerExchangeRoutes(authScope, options.pool!)
       registerPurchaseRoutes(authScope, options.pool!)
       registerCustomerOrderRoutes(authScope, options.pool!)
+      registerReportRoutes(authScope, options.pool!)
     })
   }
 

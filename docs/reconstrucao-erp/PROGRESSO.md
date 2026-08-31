@@ -50,7 +50,7 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas; produtos/variantes; leitura e ajuste de estoque; primeira versão do migrador de produtos com checksum, rejeições, rastreabilidade e reconciliação de `opening_balance`, validada em PostgreSQL 16 real. | Entrada por compra, demais origens de movimento e homologação contra fonte oficial. |
 | 3 — vendas | `PARCIAL` | Criação paga/pendente, detalhe/lista, totais autoritativos, baixa, pagamentos posteriores e troca imutável; auditoria, idempotência por usuário e concorrência real verdes. | PDV, aprovação de diferença financeira da troca e E2E. |
 | 4 — compras e encomendas | `PARCIAL` | Compras/recebimentos conciliados; encomenda livre com vínculo opcional, máquina de estados, timeline, motivo de cancelamento, auditoria e idempotência. | Cancelamento de compra após decisão oficial; UI/E2E. |
-| 5 — financeiro, catálogo e operação | `NAO_FEITO` | Nenhuma implementação nova no baseline. | Indicadores, catálogo, auditoria, backup/restauração e operação verdes. |
+| 5 — financeiro, catálogo e operação | `PARCIAL` | Relatório financeiro reconciliado com bases de venda/caixa explícitas, pendência, custo, estoque e compras abertas. | Regime oficial, relatório de produtos, dashboard, catálogo e operação. |
 | 6 — migração e corte | `NAO_FEITO` | Nenhuma migração real executada. | Homologação determinística, treinamento, paralelo e aprovações de corte. |
 
 ## Evidência antes/depois — baseline
@@ -262,3 +262,11 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - A fixture fixa separa vendas por `created_at` de pagamentos por `received_at` e define reconciliação de pendência, custo, estoque e compras abertas.
 - RED válido: 29 testes anteriores PASS; os 2 novos testes retornam 404 porque `/reports/financial` ainda não existe.
 - O endpoint não nomeará “faturamento” até a aprovação do regime; ambas as bases serão expostas explicitamente.
+
+### 2026-08-30 — Bloco 5, checkpoint GREEN financeiro
+
+- `/reports/financial` usa datas civis em `America/Sao_Paulo` e separa venda por `created_at` de caixa por `received_at`.
+- Fixture conciliou vendas 300,00, recebimentos 150,00, pendência 150,00, custo 160,00, lucro 140,00, margem 46,67%, estoque 150,00/300,00 e compra aberta 60,00.
+- A resposta declara as bases e não usa “faturamento” enquanto a decisão externa estiver pendente.
+- 31 testes de integração e 44 testes da API PASS; cobertura 87,57% statements, 80,21% branches, 100% functions e 91,05% lines; `pnpm check` PASS.
+- Próximo passo seguro: relatório de produtos e resumo do dashboard usando as mesmas fontes reconciliadas.
