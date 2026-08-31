@@ -205,3 +205,10 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - `GET /sales` filtra status e limita paginação a 100; detalhe existente passou a refletir pagamentos e saldo atuais.
 - `pnpm --filter @erp/api test:integration`: 20 testes PASS em PostgreSQL 16; cobertura integral da API: 33 testes PASS, 88,12% statements, 80,76% branches, 100% functions e 91,54% lines.
 - Próximo passo seguro: ciclo TDD de troca auditável com devolução/retirada atômicas e concorrência.
+
+### 2026-08-30 — Bloco 3, checkpoint RED de trocas
+
+- Novos cenários definem evento imutável, movimentos de entrada/saída, limite devolvido, replay e rollback concorrente quando falta o item entregue.
+- RED válido: 20 testes anteriores PASS; os 2 novos testes falham com HTTP 404 no endpoint de troca ausente.
+- Diferença financeira não será inventada: o contrato inicial exige quantidades iguais e a política monetária permanece uma decisão externa.
+- Próximo passo seguro: implementar troca transacional e agregá-la ao detalhe da venda.

@@ -214,6 +214,83 @@ describe('sales HTTP flow', () => {
     expect(missing.json()).toMatchObject({ code: 'SALE_NOT_FOUND' })
   })
 
+  it('exchanges sold stock atomically without rewriting the original sale item', async () => {
+    const returnedVariantId = await insertVariant(5)
+    const deliveredVariantId = await insertVariant(2)
+    const sale = await postSale(randomUUID(), {
+      items: [{ variantId: returnedVariantId, quantity: 1 }],
+      discountAmount: '0.00',
+      payment: { amount: '150.00', method: 'pix' },
+    })
+    const key = randomUUID()
+    const payload = {
+      reason: 'Tamanho incorreto na fixture',
+      returned: [{ variantId: returnedVariantId, quantity: 1 }],
+      delivered: [{ variantId: deliveredVariantId, quantity: 1 }],
+    }
+    const first = await postExchange(sale.json().id, key, payload)
+    const repeated = await postExchange(sale.json().id, key, payload)
+
+    expect(first.statusCode).toBe(201)
+    expect(repeated.json()).toEqual(first.json())
+    expect(first.json()).toMatchObject({ saleId: sale.json().id, returnedUnits: 1, deliveredUnits: 1 })
+
+    const duplicateReturn = await postExchange(sale.json().id, randomUUID(), payload)
+    expect(duplicateReturn.statusCode).toBe(409)
+    expect(duplicateReturn.json()).toMatchObject({ code: 'RETURN_QUANTITY_EXCEEDED' })
+
+    const detail = await app.inject({ method: 'GET', url: `/sales/${sale.json().id}`, headers: { cookie: authCookie() } })
+    expect(detail.json().items).toEqual([expect.objectContaining({ variantId: returnedVariantId })])
+    expect(detail.json().exchanges).toHaveLength(1)
+
+    const state = await pool.query<{
+      returned_stock: number
+      delivered_stock: number
+      exchanges: string
+      exchange_items: string
+      movements: string
+      audits: string
+    }>(
+      `SELECT
+         (SELECT stock_quantity FROM product_variants WHERE id = $1) AS returned_stock,
+         (SELECT stock_quantity FROM product_variants WHERE id = $2) AS delivered_stock,
+         (SELECT count(*) FROM exchanges WHERE sale_id = $3) AS exchanges,
+         (SELECT count(*) FROM exchange_items ei JOIN exchanges e ON e.id = ei.exchange_id WHERE e.sale_id = $3) AS exchange_items,
+         (SELECT count(*) FROM inventory_movements WHERE source_entity_type = 'exchange' AND source_entity_id IN (SELECT id FROM exchanges WHERE sale_id = $3)) AS movements,
+         (SELECT count(*) FROM audit_log WHERE entity_id = $3::text AND action = 'sale.exchange') AS audits`,
+      [returnedVariantId, deliveredVariantId, sale.json().id],
+    )
+    expect(state.rows[0]).toEqual({ returned_stock: 5, delivered_stock: 1, exchanges: '1', exchange_items: '2', movements: '2', audits: '1' })
+  })
+
+  it('rolls back the returned side when concurrent exchange delivery has no stock', async () => {
+    const returnedVariantId = await insertVariant(3)
+    const deliveredVariantId = await insertVariant(1)
+    const sale = await postSale(randomUUID(), {
+      items: [{ variantId: returnedVariantId, quantity: 2 }],
+      discountAmount: '0.00',
+      payment: { amount: '300.00', method: 'cash' },
+    })
+    const request = () => postExchange(sale.json().id, randomUUID(), {
+      reason: 'Concorrência sintética',
+      returned: [{ variantId: returnedVariantId, quantity: 1 }],
+      delivered: [{ variantId: deliveredVariantId, quantity: 1 }],
+    })
+
+    const responses = await Promise.all([request(), request()])
+    expect(responses.map(({ statusCode }) => statusCode).sort()).toEqual([201, 409])
+    expect(responses.find(({ statusCode }) => statusCode === 409)?.json()).toMatchObject({ code: 'INSUFFICIENT_STOCK' })
+
+    const state = await pool.query<{ returned_stock: number; delivered_stock: number; exchanges: string }>(
+      `SELECT
+         (SELECT stock_quantity FROM product_variants WHERE id = $1) AS returned_stock,
+         (SELECT stock_quantity FROM product_variants WHERE id = $2) AS delivered_stock,
+         (SELECT count(*) FROM exchanges WHERE sale_id = $3) AS exchanges`,
+      [returnedVariantId, deliveredVariantId, sale.json().id],
+    )
+    expect(state.rows[0]).toEqual({ returned_stock: 2, delivered_stock: 0, exchanges: '1' })
+  })
+
   function postSale(key: string, payload: Record<string, unknown>) {
     return app.inject({
       method: 'POST',
@@ -231,6 +308,15 @@ describe('sales HTTP flow', () => {
     return app.inject({
       method: 'POST',
       url: `/sales/${saleId}/payments`,
+      payload,
+      headers: { cookie: authCookie(), 'x-csrf-token': csrfToken, 'idempotency-key': key },
+    })
+  }
+
+  function postExchange(saleId: string, key: string, payload: Record<string, unknown>) {
+    return app.inject({
+      method: 'POST',
+      url: `/sales/${saleId}/exchanges`,
       payload,
       headers: { cookie: authCookie(), 'x-csrf-token': csrfToken, 'idempotency-key': key },
     })
