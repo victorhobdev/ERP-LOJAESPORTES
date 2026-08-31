@@ -154,3 +154,10 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - `pnpm --filter @erp/api test:integration`: 11 testes PASS em PostgreSQL 16; `pnpm check`: lint, tipos, 23 testes unitários e builds PASS.
 - Cobertura integral da API: 24 testes PASS; 89,24% statements, 82,2% branches, 100% functions e 93,1% lines.
 - Próximo passo seguro: ciclo TDD de migração determinística de produtos/estoque legado e relatório de reconciliação, sem usar dados reais até a fonte oficial ser confirmada.
+
+### 2026-08-30 — Bloco 2, checkpoint RED do migrador de produtos
+
+- Nova suíte PostgreSQL define importação de variantes reconciliadas, `opening_balance`, rastreabilidade por `legacy_id`, rejeições classificadas e reexecução idempotente do mesmo snapshot.
+- RED válido: 11 testes anteriores PASS; apenas a nova suíte falha porque `legacy-products.js` ainda não existe.
+- A fonte é uma coleção de fixtures sintéticas normalizadas. Nenhum backup ou banco MySQL foi lido, escrito ou inferido como produção.
+- Próximo passo seguro: implementar a biblioteca transacional mínima e repetir exatamente a mesma suíte.

@@ -9,7 +9,7 @@
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.unit.config.ts",
-    "test:integration": "vitest run src/shared/db/database.integration.test.ts src/modules/auth/auth.integration.test.ts src/modules/inventory/inventory.integration.test.ts",
+    "test:integration": "vitest run src/shared/db/database.integration.test.ts src/modules/auth/auth.integration.test.ts src/modules/inventory/inventory.integration.test.ts src/modules/migration/legacy-products.integration.test.ts",
     "test:coverage:all": "vitest run --coverage",
     "test:coverage": "vitest run --coverage --config vitest.unit.config.ts"
   },
