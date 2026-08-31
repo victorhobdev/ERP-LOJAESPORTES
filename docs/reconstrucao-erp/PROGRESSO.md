@@ -256,3 +256,9 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - Cenário completo produziu quatro eventos/quatro auditorias e zero compras/movimentos automáticos.
 - `pnpm --filter @erp/api test:integration`: 29 testes PASS em PostgreSQL 16; cobertura integral da API: 42 testes PASS, 87,39% statements, 80,43% branches, 100% functions e 90,85% lines.
 - Próximo passo seguro: iniciar Bloco 5 por indicadores financeiros reconciliados e dashboard, antes de catálogo/backup/operação.
+
+### 2026-08-30 — Bloco 5, checkpoint RED financeiro
+
+- A fixture fixa separa vendas por `created_at` de pagamentos por `received_at` e define reconciliação de pendência, custo, estoque e compras abertas.
+- RED válido: 29 testes anteriores PASS; os 2 novos testes retornam 404 porque `/reports/financial` ainda não existe.
+- O endpoint não nomeará “faturamento” até a aprovação do regime; ambas as bases serão expostas explicitamente.
