@@ -20,7 +20,7 @@ export function App({ children }: PropsWithChildren) {
         Pular para o conteúdo
       </a>
 
-      <aside className="sidebar" aria-label="Navegação principal">
+      <aside className="sidebar">
         <a className="brand" href="/inicio" aria-label="ERP 2.0 — Início">
           <span className="brand-mark" aria-hidden="true">E2</span>
           <span>
@@ -29,7 +29,7 @@ export function App({ children }: PropsWithChildren) {
           </span>
         </a>
 
-        <nav>
+        <nav aria-label="Navegação principal">
           {navigation.map(([label, href]) => (
             <a href={href} key={href}>{label}</a>
           ))}

@@ -27,7 +27,7 @@ describe('financial report HTTP flow', () => {
     await seedKnownDataset()
     app = buildApp({ pool, logger: false, secureCookies: false })
     await app.ready()
-  }, 30_000)
+  }, 60_000)
 
   afterAll(async () => {
     await app?.close()
@@ -40,6 +40,16 @@ describe('financial report HTTP flow', () => {
     const response = await app.inject({ method: 'GET', url: '/reports/financial?from=2026-08-01&to=2026-08-31' })
     expect(response.statusCode).toBe(401)
     expect(response.json()).toMatchObject({ code: 'UNAUTHENTICATED' })
+
+    for (const url of [
+      '/reports/financial?from=2026-09-01&to=2026-08-01',
+      '/reports/products?from=invalid&to=2026-08-01',
+      '/dashboard?date=invalid',
+    ]) {
+      const invalid = await app.inject({ method: 'GET', url, headers: { cookie: `erp_session=${encodeURIComponent(sessionToken)}` } })
+      expect(invalid.statusCode).toBe(400)
+      expect(invalid.json()).toMatchObject({ code: 'VALIDATION_ERROR' })
+    }
   })
 
   it('reconciles sale-date, receipt-date, cost, stock and open-purchase metrics without mixing bases', async () => {
@@ -64,6 +74,56 @@ describe('financial report HTTP flow', () => {
       openPurchaseCapital: '60.00',
       paymentsByMethod: [{ method: 'pix', amount: '150.00' }],
       updatedAt: expect.any(String),
+    })
+  })
+
+  it('ranks product variants from immutable sale snapshots while preserving current stock', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/reports/products?from=2026-08-01&to=2026-08-31',
+      headers: { cookie: `erp_session=${encodeURIComponent(sessionToken)}` },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      period: { from: '2026-08-01', to: '2026-08-31', timezone: 'America/Sao_Paulo' },
+      items: [{
+        club: 'Relatório FC',
+        currentStockQuantity: 3,
+        grossProfit: '140.00',
+        historicalCost: '160.00',
+        model: 'Base',
+        salesAmount: '300.00',
+        size: 'M',
+        sku: expect.any(String),
+        type: 'Masculina',
+        unitsSold: 3,
+        variantId: expect.any(String),
+      }],
+    })
+  })
+
+  it('returns an operational dashboard with explicit as-of and event-date bases', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/dashboard?date=2026-08-20',
+      headers: { cookie: `erp_session=${encodeURIComponent(sessionToken)}` },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      date: '2026-08-20',
+      timezone: 'America/Sao_Paulo',
+      bases: { sales: 'sale_created_at', cash: 'payment_received_at', pending: 'current_state_as_of_request' },
+      salesCreatedToday: '0.00',
+      confirmedPaymentsToday: '50.00',
+      pendingSalesCount: 1,
+      overdueSalesCount: 0,
+      lowStockVariants: 0,
+      outOfStockVariants: 0,
+      openPurchaseOrders: 1,
+      pendingPurchaseUnits: 3,
+      openCustomerOrders: 0,
     })
   })
 

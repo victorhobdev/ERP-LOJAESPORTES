@@ -98,6 +98,14 @@ describe('customer orders HTTP flow', () => {
     expect(detail.json().timeline.map((event: { toStatus: string }) => event.toStatus)).toEqual([
       'pending', 'supplier_ordered', 'product_arrived', 'delivered',
     ])
+    const list = await app.inject({ method: 'GET', url: '/customer-orders?status=delivered', headers: { cookie: authCookie() } })
+    expect(list.statusCode).toBe(200)
+    expect(list.json().items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: created.json().id, status: 'delivered', customerName: 'Cliente Encomenda' }),
+    ]))
+    const unfiltered = await app.inject({ method: 'GET', url: '/customer-orders', headers: { cookie: authCookie() } })
+    expect(unfiltered.statusCode).toBe(200)
+    expect(unfiltered.json().items.length).toBeGreaterThan(0)
     const sideEffects = await pool.query<{ purchases: string; movements: string; audits: string }>(
       `SELECT
          (SELECT count(*) FROM purchase_orders) AS purchases,

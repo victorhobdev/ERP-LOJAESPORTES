@@ -19,6 +19,11 @@ const createSchema = z.object({
 })
 const statusSchema = z.object({ status: z.enum(statuses), reason: z.string().trim().max(500).optional() })
 const idSchema = z.object({ id: z.string().uuid() })
+const listSchema = z.object({
+  status: z.enum(statuses).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(50),
+})
 const allowedTransitions: Record<string, readonly string[]> = {
   pending: ['supplier_ordered', 'cancelled'],
   supplier_ordered: ['product_arrived', 'cancelled'],
@@ -30,6 +35,25 @@ const allowedTransitions: Record<string, readonly string[]> = {
 type IdempotencyRow = { request_hash: string; response_status: number | null; response_body: unknown }
 
 export function registerCustomerOrderRoutes(app: FastifyInstance, pool: Pool) {
+  app.get('/customer-orders', async (request, reply) => {
+    if (!await requirePermission(pool, request, reply, 'customer_orders:write')) return
+    const parsed = listSchema.safeParse(request.query)
+    if (!parsed.success) return sendError(reply, request, 400, 'VALIDATION_ERROR', 'Filtros inválidos.')
+    const { status, page, limit } = parsed.data
+    const values: unknown[] = []
+    const where = status ? `WHERE co.status = $${values.push(status)}` : ''
+    values.push(limit, (page - 1) * limit)
+    const result = await pool.query(
+      `SELECT co.id, co.status, co.club, co.model, co.type, co.size,
+              co.created_at::text AS "createdAt", c.name AS "customerName", c.contact AS "customerContact"
+       FROM customer_orders co JOIN customers c ON c.id = co.customer_id
+       ${where} ORDER BY co.created_at DESC, co.id DESC
+       LIMIT $${values.length - 1} OFFSET $${values.length}`,
+      values,
+    )
+    return reply.send({ items: result.rows, page, limit })
+  })
+
   app.post('/customer-orders', async (request, reply) => {
     const session = await requirePermission(pool, request, reply, 'customer_orders:write')
     if (!session) return

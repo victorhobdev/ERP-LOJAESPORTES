@@ -97,6 +97,15 @@ describe('purchase orders HTTP flow', () => {
     expect(detail.json().items[0]).toMatchObject({ orderedQuantity: 4, receivedQuantity: 4, pendingQuantity: 0 })
     expect(detail.json().receipts).toHaveLength(2)
 
+    const list = await app.inject({ method: 'GET', url: '/purchase-orders?status=fully_received', headers: { cookie: authCookie() } })
+    expect(list.statusCode).toBe(200)
+    expect(list.json().items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: order.json().id, status: 'fully_received', pendingQuantity: 0 }),
+    ]))
+    const unfiltered = await app.inject({ method: 'GET', url: '/purchase-orders', headers: { cookie: authCookie() } })
+    expect(unfiltered.statusCode).toBe(200)
+    expect(unfiltered.json().items.length).toBeGreaterThan(0)
+
     const state = await pool.query<{ stock_quantity: number; current_cost: string; movements: string; receipts: string; audits: string }>(
       `SELECT v.stock_quantity, v.current_cost::text,
               (SELECT count(*) FROM inventory_movements WHERE variant_id = v.id AND type = 'purchase_receipt') AS movements,

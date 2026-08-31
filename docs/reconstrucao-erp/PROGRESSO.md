@@ -46,11 +46,11 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 | Bloco | Status | Evidência atual | Gate pendente |
 | --- | --- | --- | --- |
 | 0 — descoberta | `PARCIAL` | `AGENTS.md` fornecido na tarefa, documentos `00`–`11`, `ERP_REAL_CONTEXT.md`, `database.sql`, schema do backup local e regras críticas do legado foram lidos/confirmados. | Banco de produção, decisões operacionais/financeiras e aprovação do responsável. |
-| 1 — experiência e fundação | `PARCIAL` | Monorepo pnpm, React/Vite/TanStack, Fastify, contratos Zod, tokens visuais, shell/protótipo de Início, health API, sessão PostgreSQL, RBAC, CSRF/CORS/CSP/rate limit, lint/tipos/testes/build e lockfile. | Protótipos de PDV/Estoque/Compra, teste de usabilidade/aprovação e CI. |
-| 2 — dados e estoque | `PARCIAL` | Schema inicial com 25 tabelas; produtos/variantes; leitura e ajuste de estoque; primeira versão do migrador de produtos com checksum, rejeições, rastreabilidade e reconciliação de `opening_balance`, validada em PostgreSQL 16 real. | Entrada por compra, demais origens de movimento e homologação contra fonte oficial. |
-| 3 — vendas | `PARCIAL` | Criação paga/pendente, detalhe/lista, totais autoritativos, baixa, pagamentos posteriores e troca imutável; auditoria, idempotência por usuário e concorrência real verdes. | PDV, aprovação de diferença financeira da troca e E2E. |
-| 4 — compras e encomendas | `PARCIAL` | Compras/recebimentos conciliados; encomenda livre com vínculo opcional, máquina de estados, timeline, motivo de cancelamento, auditoria e idempotência. | Cancelamento de compra após decisão oficial; UI/E2E. |
-| 5 — financeiro, catálogo e operação | `PARCIAL` | Relatório financeiro reconciliado com bases de venda/caixa explícitas, pendência, custo, estoque e compras abertas. | Regime oficial, relatório de produtos, dashboard, catálogo e operação. |
+| 1 — experiência e fundação | `PARCIAL` | Monorepo, segurança HTTP, shell responsivo, telas operacionais, CI PostgreSQL/Chromium e gates de lint/tipos/testes/build. | Teste de usabilidade e aprovação dos responsáveis; requisitos reais de dispositivos/offline. |
+| 2 — dados e estoque | `PARCIAL` | Schema inicial; produtos/variantes; leitura/ajuste; entradas de compra; movimentos de venda/troca; migrador determinístico e concorrência em PostgreSQL 16. | Homologação contra fonte oficial e publicação de imagens. |
+| 3 — vendas | `PARCIAL` | Backend completo do recorte, PDV web pago e E2E idempotente; pagamento posterior e troca preservam histórico/auditoria. | UI de pagamento posterior/troca e aprovação da diferença financeira. |
+| 4 — compras e encomendas | `PARCIAL` | Backend, listagens web, formulário de compra, timelines e E2E de renderização operacional. | Cancelamento de compra após decisão oficial e homologação de todos os formulários. |
+| 5 — financeiro, catálogo e operação | `PARCIAL` | Financeiro, relatório de produtos, dashboard, catálogo com placeholder, Compose, proxy, CI, health, backup/checksum e restore drill protegido. | Regime oficial, armazenamento/sync de imagens, retenção e alerta externo aprovados. |
 | 6 — migração e corte | `NAO_FEITO` | Nenhuma migração real executada. | Homologação determinística, treinamento, paralelo e aprovações de corte. |
 
 ## Evidência antes/depois — baseline
@@ -270,3 +270,14 @@ Essas decisões impedem o gate final e a migração real, mas não impedem imple
 - A resposta declara as bases e não usa “faturamento” enquanto a decisão externa estiver pendente.
 - 31 testes de integração e 44 testes da API PASS; cobertura 87,57% statements, 80,21% branches, 100% functions e 91,05% lines; `pnpm check` PASS.
 - Próximo passo seguro: relatório de produtos e resumo do dashboard usando as mesmas fontes reconciliadas.
+
+### 2026-08-30 — Blocos 1/3/4/5, checkpoint GREEN operacional
+
+- Relatório por variante usa snapshots imutáveis de itens de venda; dashboard separa venda por criação, caixa por recebimento e filas pelo estado atual.
+- Listagens paginadas de compras e encomendas foram adicionadas e exercitadas com/sem filtro no PostgreSQL.
+- Shell deixou de usar placeholders nas rotas principais: dashboard, PDV, vendas, estoque, compras, encomendas, financeiro, produtos, catálogo e configurações possuem estados de loading/erro/vazio.
+- Playwright Chromium: 3 cenários PASS em 1366×768 (teclado, venda idempotente e smoke operacional). Componentes web: 4 PASS.
+- CI versionada com PostgreSQL 16, gates completos, integração, cobertura e artefatos E2E em falha.
+- Compose/Nginx, `.env.example`, healthchecks e runbook foram adicionados. Backup gera dump + SHA-256; restore drill recusa qualquer banco que não termine em `_restore_test`.
+- `pnpm check`: PASS. Integração: 33 PASS. API completa: 46 PASS; 87,62% statements, 80% branches, 100% functions e 91,4% lines.
+- Bloqueios restantes: fonte produtiva, aprovações operacionais/financeiras, credenciais de armazenamento, retenção/janela de corte e homologação humana/dispositivos.

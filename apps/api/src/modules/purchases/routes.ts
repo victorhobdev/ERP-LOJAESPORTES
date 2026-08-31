@@ -34,6 +34,11 @@ const receiptSchema = z.object({
   }
 })
 const idSchema = z.object({ id: z.string().uuid() })
+const listSchema = z.object({
+  status: z.enum(['draft', 'placed', 'partially_received', 'fully_received', 'cancelled']).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(50),
+})
 const maxMoneyCents = 99_999_999_999_999n
 
 type IdempotencyRow = { request_hash: string; response_status: number | null; response_body: unknown }
@@ -48,6 +53,29 @@ type ReceiptItemRow = {
 }
 
 export function registerPurchaseRoutes(app: FastifyInstance, pool: Pool) {
+  app.get('/purchase-orders', async (request, reply) => {
+    if (!await requirePermission(pool, request, reply, 'purchases:read')) return
+    const parsed = listSchema.safeParse(request.query)
+    if (!parsed.success) return sendError(reply, request, 400, 'VALIDATION_ERROR', 'Filtros inválidos.')
+    const { status, page, limit } = parsed.data
+    const values: unknown[] = []
+    const where = status ? `WHERE po.status = $${values.push(status)}` : ''
+    values.push(limit, (page - 1) * limit)
+    const result = await pool.query(
+      `SELECT po.id, po.status, po.ordered_on::text AS "orderedOn", s.name AS "supplierName",
+              po.final_amount::text AS "finalAmount",
+              coalesce(sum(poi.ordered_quantity), 0)::integer AS "orderedQuantity",
+              coalesce(sum(poi.received_quantity), 0)::integer AS "receivedQuantity",
+              coalesce(sum(poi.ordered_quantity - poi.received_quantity), 0)::integer AS "pendingQuantity"
+       FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id
+       LEFT JOIN purchase_order_items poi ON poi.purchase_order_id = po.id
+       ${where} GROUP BY po.id, s.id ORDER BY po.ordered_on DESC, po.id DESC
+       LIMIT $${values.length - 1} OFFSET $${values.length}`,
+      values,
+    )
+    return reply.send({ items: result.rows, page, limit })
+  })
+
   app.post('/purchase-orders', async (request, reply) => {
     const session = await requirePermission(pool, request, reply, 'purchases:write')
     if (!session) return
