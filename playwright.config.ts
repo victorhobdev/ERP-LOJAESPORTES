@@ -3,7 +3,9 @@ import path from 'node:path'
 
 import { defineConfig, devices } from '@playwright/test'
 
+const e2eMediaDir = process.env['E2E_MEDIA_DIR'] || path.resolve('e2e-artifacts/media')
 const e2eSyncDir = process.env['E2E_SYNC_DIR'] ?? path.resolve('e2e-artifacts/catalog-sync')
+mkdirSync(e2eMediaDir, { recursive: true })
 mkdirSync(e2eSyncDir, { recursive: true })
 
 export default defineConfig({
@@ -28,7 +30,7 @@ export default defineConfig({
           reuseExistingServer: false,
           env: {
             DATABASE_URL: process.env['E2E_DATABASE_URL'] ?? '',
-            MEDIA_STORAGE_DIR: process.env['E2E_MEDIA_DIR'] ?? '',
+            MEDIA_STORAGE_DIR: e2eMediaDir,
             CATALOG_SYNC_LOCAL_DIR: e2eSyncDir,
             PORT: '3333',
             HOST: '127.0.0.1',
