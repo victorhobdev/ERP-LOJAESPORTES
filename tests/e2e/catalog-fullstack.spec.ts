@@ -10,13 +10,15 @@ test.skip(!enabled, 'Full-stack de catalogo exige E2E_FULLSTACK=1 com API e Post
 const tag = process.env['E2E_TAG'] ?? ''
 
 const club = 'E2E Catalogo'
-const model = `Modelo ${tag}`
-const sku = `CAT-M-${tag}`
 
 // PNG 1x1 valido (assinatura + IHDR + IDAT + IEND).
 const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 
-test('catalogo full-stack: upload de imagem, leitura de midia e sincronizacao local', async ({ page }) => {
+test('catalogo full-stack: upload de imagem, leitura de midia e sincronizacao local', async ({ page }, testInfo) => {
+  const attemptTag = testInfo.retry === 0 ? tag : `${tag}-retry-${testInfo.retry}`
+  const model = `Modelo ${attemptTag}`
+  const sku = `CAT-M-${attemptTag}`
+
   expect(tag, 'E2E_TAG sintética').not.toBe('')
   expect(page.viewportSize()).toEqual({ width: 1366, height: 768 })
 
@@ -36,7 +38,15 @@ test('catalogo full-stack: upload de imagem, leitura de midia e sincronizacao lo
     await form.getByRole('textbox', { name: 'Custo' }).fill('60.00')
     const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/products') && response.request().method() === 'POST')
     await page.getByRole('button', { name: 'Cadastrar produto' }).click()
-    expect((await responsePromise).status()).toBe(201)
+    const response = await responsePromise
+    expect(response.status()).toBe(201)
+    const product = (await response.json()) as { variants: Array<{ id: string }> }
+    expect(product.variants).toHaveLength(1)
+    const movement = await page.request.post('/api/inventory/movements', {
+      data: { variantId: product.variants[0]!.id, quantityDelta: 1, reason: 'Disponibilizar produto para catálogo E2E' },
+      headers: { 'idempotency-key': `catalog-initial-stock-${attemptTag}` },
+    })
+    expect(movement.status()).toBe(201)
   })
 
   await test.step('upload de imagem real pelo catalogo', async () => {
@@ -44,7 +54,7 @@ test('catalogo full-stack: upload de imagem, leitura de midia e sincronizacao lo
     const input = page.getByLabel(`Enviar imagem de ${club} ${model}`)
     const artifacts = path.join('e2e-artifacts', 'catalog')
     mkdirSync(artifacts, { recursive: true })
-    const imagePath = path.join(artifacts, `escudo-${tag}.png`)
+    const imagePath = path.join(artifacts, `escudo-${attemptTag}.png`)
     writeFileSync(imagePath, Buffer.from(pngBase64, 'base64'))
     await input.setInputFiles(imagePath)
     const image = page.getByRole('img', { name: `Imagem: ${club} ${model}`, exact: true })
