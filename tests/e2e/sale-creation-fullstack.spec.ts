@@ -1,12 +1,11 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 
 import { expect, test } from '@playwright/test'
+import { openOperationalApp } from './operational-app.js'
 
 const enabled = process.env['E2E_FULLSTACK'] === '1'
 test.skip(!enabled, 'Full-stack de criacao exige E2E_FULLSTACK=1 com API e PostgreSQL de teste.')
 
-const username = process.env['E2E_USERNAME'] ?? ''
-const password = process.env['E2E_PASSWORD'] ?? ''
 const tag = process.env['E2E_TAG'] ?? ''
 const idsFile = process.env['E2E_SALE_CREATION_IDS_FILE'] ?? 'e2e-artifacts/sale-creation-fullstack-ids.json'
 
@@ -25,15 +24,10 @@ function saveIds(ids: Record<string, string>) {
 }
 
 test('criacao full-stack: pendente e parcial sem duplicar efeitos', async ({ page }) => {
-  expect(username, 'E2E_USERNAME sintético').not.toBe('')
   expect(tag, 'E2E_TAG sintética').not.toBe('')
 
-  await test.step('login real contra a API', async () => {
-    await page.goto('/login')
-    await page.getByRole('textbox', { name: 'Usuário' }).fill(username)
-    await page.getByLabel('Senha', { exact: true }).fill(password)
-    await page.getByRole('button', { name: 'Entrar' }).click()
-    await page.waitForURL('**/inicio')
+  await test.step('abre o painel operacional', async () => {
+    await openOperationalApp(page)
   })
 
   const addButton = page.getByRole('button', { name: `Adicionar ${club} ${model}, tamanho M` })

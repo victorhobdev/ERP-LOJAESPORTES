@@ -2,12 +2,11 @@ import { writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
 
 import { expect, test } from '@playwright/test'
+import { openOperationalApp } from './operational-app.js'
 
 const enabled = process.env['E2E_FULLSTACK'] === '1'
 test.skip(!enabled, 'Full-stack de catalogo exige E2E_FULLSTACK=1 com API e PostgreSQL de teste.')
 
-const username = process.env['E2E_USERNAME'] ?? ''
-const password = process.env['E2E_PASSWORD'] ?? ''
 const tag = process.env['E2E_TAG'] ?? ''
 
 const club = 'E2E Catalogo'
@@ -18,16 +17,11 @@ const sku = `CAT-M-${tag}`
 const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 
 test('catalogo full-stack: upload de imagem, leitura de midia e sincronizacao local', async ({ page }) => {
-  expect(username, 'E2E_USERNAME sintético').not.toBe('')
   expect(tag, 'E2E_TAG sintética').not.toBe('')
   expect(page.viewportSize()).toEqual({ width: 1366, height: 768 })
 
-  await test.step('login real contra a API', async () => {
-    await page.goto('/login')
-    await page.getByRole('textbox', { name: 'Usuário' }).fill(username)
-    await page.getByLabel('Senha', { exact: true }).fill(password)
-    await page.getByRole('button', { name: 'Entrar' }).click()
-    await page.waitForURL('**/inicio')
+  await test.step('abre o painel operacional', async () => {
+    await openOperationalApp(page)
   })
 
   await test.step('cadastrar produto com variante', async () => {

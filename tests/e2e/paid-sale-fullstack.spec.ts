@@ -1,12 +1,11 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 
 import { expect, test } from '@playwright/test'
+import { openOperationalApp } from './operational-app.js'
 
 const enabled = process.env['E2E_FULLSTACK'] === '1'
 test.skip(!enabled, 'Full-stack pago exige E2E_FULLSTACK=1 com API e PostgreSQL de teste.')
 
-const username = process.env['E2E_USERNAME'] ?? ''
-const password = process.env['E2E_PASSWORD'] ?? ''
 const club = process.env['E2E_CLUB'] ?? ''
 const model = process.env['E2E_MODEL'] ?? ''
 const variantId = process.env['E2E_VARIANT_ID'] ?? ''
@@ -29,18 +28,12 @@ function saveIds(ids: Record<string, string>) {
   appendFileSync(idsFile, `${JSON.stringify(ids)}\n`)
 }
 
-test('venda paga full-stack: login, venda, persistencia e retentativa sem duplicar', async ({ page }) => {
-  expect(username, 'E2E_USERNAME sintético').not.toBe('')
+test('venda paga full-stack: venda, persistencia e retentativa sem duplicar', async ({ page }) => {
   expect(variantId, 'E2E_VARIANT_ID sintético').not.toBe('')
   expect(sku, 'E2E_SKU sintético').not.toBe('')
 
-  await test.step('login real contra a API', async () => {
-    await page.goto('/login')
-    await page.getByRole('textbox', { name: 'Usuário' }).fill(username)
-    await page.getByLabel('Senha', { exact: true }).fill(password)
-    await page.getByRole('button', { name: 'Entrar' }).click()
-    await page.waitForURL('**/inicio')
-    await expect(page.getByRole('heading', { name: 'Visão da operação' })).toBeVisible()
+  await test.step('abre o painel operacional', async () => {
+    await openOperationalApp(page)
   })
 
   const addButton = (size = 'M') => page.getByRole('button', { name: `Adicionar ${club} ${model}, tamanho ${size}` })

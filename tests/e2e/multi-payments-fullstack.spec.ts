@@ -1,13 +1,12 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 
 import { expect, test } from '@playwright/test'
+import { openOperationalApp } from './operational-app.js'
 
 const enabled = process.env['E2E_FULLSTACK'] === '1'
 test.skip(!enabled, 'Full-stack de pagamentos exige E2E_FULLSTACK=1 com API e PostgreSQL de teste.')
 test.describe.configure({ retries: 0 })
 
-const username = process.env['E2E_USERNAME'] ?? ''
-const password = process.env['E2E_PASSWORD'] ?? ''
 const saleId = process.env['E2E_SALE_ID'] ?? ''
 const idsFile = process.env['E2E_MULTI_PAYMENTS_IDS_FILE'] ?? 'e2e-artifacts/multi-payments-fullstack-ids.json'
 
@@ -17,15 +16,10 @@ function saveIds(ids: Record<string, string>) {
 }
 
 test('vendas full-stack: dois pagamentos sequenciais sem duplicar efeitos', async ({ page }) => {
-  expect(username, 'E2E_USERNAME sintético').not.toBe('')
   expect(saleId, 'E2E_SALE_ID sintético').not.toBe('')
 
-  await test.step('login real contra a API', async () => {
-    await page.goto('/login')
-    await page.getByRole('textbox', { name: 'Usuário' }).fill(username)
-    await page.getByLabel('Senha', { exact: true }).fill(password)
-    await page.getByRole('button', { name: 'Entrar' }).click()
-    await page.waitForURL('**/inicio')
+  await test.step('abre o painel operacional', async () => {
+    await openOperationalApp(page)
   })
 
   const firstId = await test.step('primeiro pagamento parcial com resposta perdida', async () => {

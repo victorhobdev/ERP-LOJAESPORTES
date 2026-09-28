@@ -1,14 +1,13 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 
 import { expect, test } from '@playwright/test'
+import { openOperationalApp } from './operational-app.js'
 
 test.describe.configure({ retries: 0 })
 
 const enabled = process.env['E2E_FULLSTACK'] === '1'
 test.skip(!enabled, 'Full-stack do relatorio exige E2E_FULLSTACK=1 com API e PostgreSQL de teste.')
 
-const username = process.env['E2E_USERNAME'] ?? ''
-const password = process.env['E2E_PASSWORD'] ?? ''
 const tag = process.env['E2E_TAG'] ?? ''
 const partialSaleId = process.env['E2E_PARTIAL_SALE_ID'] ?? ''
 const pendingSaleId = process.env['E2E_PENDING_SALE_ID'] ?? ''
@@ -28,15 +27,10 @@ function saveIds(ids: Record<string, string>) {
 }
 
 test('relatorio financeiro reconcilia periodo atual, anterior e drilldown sem escrita', async ({ page }) => {
-  expect(username, 'E2E_USERNAME sintetico').not.toBe('')
   expect(partialSaleId, 'E2E_PARTIAL_SALE_ID sintetico').not.toBe('')
 
-  await test.step('login real contra a API', async () => {
-    await page.goto('/login')
-    await page.getByRole('textbox', { name: 'Usuário' }).fill(username)
-    await page.getByLabel('Senha', { exact: true }).fill(password)
-    await page.getByRole('button', { name: 'Entrar' }).click()
-    await page.waitForURL('**/inicio')
+  await test.step('abre o painel operacional', async () => {
+    await openOperationalApp(page)
   })
 
   await test.step('relatorio com comparacao exibe valores e serie zerada', async () => {
