@@ -94,7 +94,7 @@ test('catalogo full-stack: upload de imagem, leitura de midia e sincronizacao lo
 
   await test.step('evidencia visual em largura estreita', async () => {
     await page.goto(`/catalogo?search=${encodeURIComponent(club)}`)
-    await expect(page.getByRole('heading', { name: club }).first()).toBeVisible()
+    await expect(page.getByRole('heading', { name: model, exact: true })).toBeVisible()
     await page.setViewportSize({ width: 390, height: 844 })
     await page.screenshot({ path: 'e2e-artifacts/catalog-390.png' })
     await page.setViewportSize({ width: 1366, height: 768 })
