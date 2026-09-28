@@ -1,0 +1,52 @@
+.sales-page .page-stack { max-width: none; gap: 14px; }
+.sales-page .page-header { align-items: center; }
+.sales-page .page-header .eyebrow { display: none; }
+.sales-page .page-header h1 { font-size: 28px; font-weight: 650; }
+.sales-page .primary-action { gap: 8px; min-height: 40px; }
+.sales-list { min-width: 0; overflow: hidden; border: 1px solid #dce2e9; border-radius: 12px; background: #fff; }
+.sales-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 64px; padding: 10px 14px; }
+.sales-status-filter { display: flex; gap: 3px; padding: 3px; border: 1px solid #e6ebf0; border-radius: 8px; background: #f5f7fa; }
+.sales-status-filter button { min-height: 36px; padding: 0 16px; border: 1px solid transparent; border-radius: 5px; color: #68798d; background: transparent; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.sales-status-filter button[aria-pressed="true"] { border-color: #dde5ef; color: #23466e; background: #fff; box-shadow: 0 1px 3px rgb(29 48 73 / 7%); }
+.sales-count { color: #60738b; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sales-table-scroll { overflow-x: auto; }
+.sales-table { table-layout: fixed; min-width: 820px; }
+.sales-date-col { width: 168px; }
+.sales-amount-col { width: 128px; }
+.sales-payment-col { width: 158px; }
+.sales-table th { height: 38px; padding: 8px 16px; border-block: 1px solid #e5eaf0; color: #60738b; background: #f6f8fb; font-size: 12px; font-weight: 600; }
+.sales-table td { height: 66px; padding: 6px 16px; border-bottom-color: #e9eef3; color: #354b65; }
+.sales-table tbody tr:nth-child(even) { background: #fcfdfe; }
+.sales-product-cell { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, 1fr); align-items: center; gap: 20px; min-width: 0; }
+.sales-customer { min-width: 0; }
+.sales-customer a { display: block; width: fit-content; max-width: 100%; overflow: hidden; color: #294362; text-decoration: none; text-overflow: ellipsis; }
+.sales-customer strong { font-size: 14px; font-weight: 600; }
+.sales-page .sale-products { max-width: 100%; margin-top: 3px; color: #60738b; font-size: 12px; }
+.sales-previews { display: flex; justify-content: center; gap: 7px; padding-inline: 16px; }
+.sales-preview { display: block; width: 48px; height: 52px; overflow: hidden; border: 1px solid #e0e6ed; border-radius: 6px; background: #f0f3f6; }
+.sales-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.sales-preview-fallback { display: grid; width: 100%; height: 100%; place-items: center; color: #97a6b7; }
+.sales-table .sales-date { color: #60738b; font-size: 13px; font-variant-numeric: tabular-nums; }
+.sales-table .sales-amount { text-align: right; font-variant-numeric: tabular-nums; }
+.sales-amount strong { font-size: 14px; font-weight: 650; }
+.sales-page .sale-payment { padding: 4px 10px; font-size: 12px; font-weight: 600; }
+.sales-page .sale-payment::before { content: ''; display: inline-block; width: 4px; height: 4px; margin: 0 5px 1px 0; border-radius: 50%; background: currentColor; }
+.sales-pagination .panel { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border: 0; border-top: 1px solid #e5eaf0; border-radius: 0; background: #fff; }
+.sales-pagination nav > span { margin-right: auto; color: #60738b; font-size: 12px; }
+.sales-pagination .secondary-action { min-height: 36px; padding: 0 12px; border-radius: 6px; font-size: 13px; }
+.sales-pagination button:disabled { opacity: .4; cursor: not-allowed; }
+.sales-list > .page-state { padding: 36px 16px; border: 0; border-top: 1px solid #e5eaf0; border-radius: 0; background: #fff; }
+.sales-list > .notice, .sales-list > .secondary-action { margin: 14px; }
+@media (hover: hover) and (pointer: fine) {
+  .sales-status-filter button:hover { color: #23466e; background: #edf2f8; }
+  .sales-table tbody tr:hover { background: #f2f6fb; }
+  .sales-customer a:hover { text-decoration: underline; text-underline-offset: 3px; }
+}
+@media (max-width: 760px) {
+  .sales-toolbar { flex-wrap: wrap; gap: 6px; padding: 8px; }
+  .sales-status-filter { max-width: 100%; }
+  .sales-status-filter button { min-height: 40px; padding: 0 9px; font-size: 13px; }
+  .sales-count { margin-left: auto; padding-right: 4px; }
+  .sales-pagination .panel { flex-wrap: wrap; }
+  .sales-pagination nav > span { flex-basis: 100%; margin-bottom: 4px; }
+}

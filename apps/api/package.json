@@ -1,0 +1,51 @@
+{
+  "name": "@erp/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch --import tsx src/server.ts",
+    "serve:e2e": "node --import tsx scripts/serve-e2e.ts",
+    "seed:e2e": "node --import tsx scripts/seed-paid-sale-e2e.ts",
+    "seed:inventory-e2e": "node --import tsx scripts/seed-inventory-e2e.ts",
+    "seed:sales-e2e": "node --import tsx scripts/seed-sales-e2e.ts",
+    "seed:purchases-e2e": "node --import tsx scripts/seed-purchases-e2e.ts",
+    "seed:customer-orders-e2e": "node --import tsx scripts/seed-customer-orders-e2e.ts",
+    "seed:financial-report-e2e": "node --import tsx scripts/seed-financial-report-e2e.ts",
+    "verify:e2e": "node --import tsx scripts/verify-paid-sale-e2e.ts",
+    "verify:sales-e2e": "node --import tsx scripts/verify-sales-e2e.ts",
+    "verify:multi-payments-e2e": "node --import tsx scripts/verify-multi-payments-e2e.ts",
+    "verify:sale-creation-e2e": "node --import tsx scripts/verify-sale-creation-e2e.ts",
+    "verify:purchases-e2e": "node --import tsx scripts/verify-purchases-e2e.ts",
+    "verify:customer-orders-e2e": "node --import tsx scripts/verify-customer-orders-e2e.ts",
+    "verify:inventory-e2e": "node --import tsx scripts/verify-inventory-e2e.ts",
+    "verify:financial-report-e2e": "node --import tsx scripts/verify-financial-report-e2e.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.unit.config.ts",
+    "test:integration": "vitest run --maxWorkers=4 src/shared/db/database.integration.test.ts src/modules/auth/auth.integration.test.ts src/modules/inventory/inventory.integration.test.ts src/modules/inventory/inventory-catalog.integration.test.ts src/modules/catalog/catalog.integration.test.ts src/modules/customers/customers.integration.test.ts src/modules/migration/legacy-products.integration.test.ts src/modules/migration/legacy-sales.integration.test.ts src/modules/migration/gemini-dump.integration.test.ts src/modules/sales/sales.integration.test.ts src/modules/purchases/purchases.integration.test.ts src/modules/purchases/suppliers.integration.test.ts src/modules/customer-orders/customer-orders.integration.test.ts src/modules/reports/financial.integration.test.ts src/modules/reports/financial-compare.integration.test.ts src/modules/reports/financial-limits.integration.test.ts src/modules/reports/product-report.integration.test.ts src/modules/users/users.integration.test.ts",
+    "test:coverage:all": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --config vitest.unit.config.ts"
+  },
+  "dependencies": {
+    "@erp/contracts": "workspace:*",
+    "@fastify/cookie": "11.1.2",
+    "@fastify/cors": "11.3.0",
+    "@fastify/helmet": "13.1.1",
+    "@fastify/multipart": "10.1.1",
+    "@fastify/rate-limit": "11.2.0",
+    "@fastify/swagger": "9.8.1",
+    "fastify": "5.12.1",
+    "pg": "8.23.0",
+    "sharp": "0.35.4",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@types/pg": "8.20.0",
+    "@vitest/coverage-v8": "4.1.11",
+    "tsx": "4.21.0",
+    "vitest": "4.1.11"
+  }
+}
