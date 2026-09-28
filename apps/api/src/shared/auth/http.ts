@@ -1,4 +1,4 @@
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Pool } from 'pg'
 
 import { hasPermission } from './authorization.js'
@@ -17,7 +17,24 @@ export type SessionContext = {
   csrf_hash: string
 }
 
+export function isAuthenticationDisabled(request: FastifyRequest): boolean {
+  return (request.server as FastifyInstance & { authenticationDisabled?: boolean }).authenticationDisabled === true
+}
+
 export async function loadSession(pool: Pool, request: FastifyRequest): Promise<SessionContext | undefined> {
+  if (isAuthenticationDisabled(request)) {
+    const result = await pool.query<SessionContext>(
+      `SELECT 'authentication-disabled' AS session_id, '' AS csrf_hash,
+              u.id AS user_id, u.username, u.display_name,
+              'administrator' AS role, ARRAY['*']::text[] AS permissions
+       FROM users u
+       WHERE u.active = true
+       ORDER BY (u.username = 'vitinho.local') DESC, u.created_at, u.id
+       LIMIT 1`,
+    )
+    return result.rows[0]
+  }
+
   const token = request.cookies[sessionCookieName]
   if (!token) return undefined
 
@@ -52,6 +69,7 @@ export async function requirePermission(
 }
 
 export function hasValidCsrf(session: SessionContext, request: FastifyRequest): boolean {
+  if (isAuthenticationDisabled(request)) return true
   const csrfCookie = request.cookies[csrfCookieName]
   const csrfHeader = request.headers['x-csrf-token']
   return typeof csrfCookie === 'string'

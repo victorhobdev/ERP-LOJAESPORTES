@@ -151,8 +151,54 @@ table { width: 100%; border-collapse: collapse; font-size: 12px; }
 th, td { padding: 12px 14px; border-bottom: 1px solid var(--color-border); text-align: left; white-space: nowrap; }
 th { color: var(--color-text-muted); background: var(--color-surface-muted); font-size: 10px; letter-spacing: .05em; text-transform: uppercase; }
 tbody tr:last-child td { border-bottom: 0; }
-.catalog-grid .panel { padding: 14px; }
-.catalog-grid h2, .catalog-grid p { margin: 8px 0; }
+.catalog-grid { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+.catalog-card { overflow: hidden; padding: 0; border-color: #e1e5ea; box-shadow: 0 2px 8px rgb(24 39 58 / 4%); }
+.catalog-card-media { position: relative; aspect-ratio: 4 / 3; overflow: hidden; background: #f3f5f7; }
+.catalog-card-media .catalog-image, .catalog-card-media .image-placeholder { width: 100%; height: 100%; border-radius: 0; object-fit: cover; }
+.catalog-card-media > small { position: absolute; top: 10px; left: 10px; padding: 4px 7px; border-radius: 999px; color: #536378; background: rgb(255 255 255 / 88%); box-shadow: 0 1px 2px rgb(22 33 48 / 8%); font-size: 10px; font-weight: 700; }
+.catalog-card-media-placeholder .image-placeholder { color: #8b98a8; background: #edf1f4; font-size: 24px; }
+.catalog-card-media-placeholder > p[role="status"] { position: absolute; right: 10px; bottom: 9px; left: 10px; margin: 0; padding: 6px 8px; border-radius: 7px; color: #83433e; background: rgb(255 244 242 / 94%); font-size: 11px; }
+.catalog-card-media-placeholder > .secondary-action { position: absolute; right: 10px; bottom: 10px; left: 10px; min-height: 32px; background: rgb(255 255 255 / 94%); font-size: 11px; }
+.catalog-card-content { display: grid; gap: 13px; padding: 15px; }
+.catalog-card-content header { min-width: 0; }
+.catalog-card-club { margin: 0 0 3px; color: #748196; font-size: 10px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
+.catalog-card h2 { margin: 0; overflow: hidden; color: #233b59; font-size: 16px; font-weight: 700; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+.catalog-card-stock { margin: 0; color: #617086; font-size: 12px; }
+.catalog-card-management { display: grid; gap: 8px; }
+.catalog-upload { display: inline-flex; width: max-content; max-width: 100%; align-items: center; min-height: 32px; padding: 0 10px; border: 1px solid #d9e0e8; border-radius: 7px; color: #536780; background: #fafbfd; font-size: 11px; font-weight: 700; cursor: pointer; }
+.catalog-upload input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+.catalog-card-management > p { margin: 0; color: #617086; font-size: 11px; }
+.catalog-card-management .notice { margin: 0; font-size: 11px; }
+.catalog-card-link { display: inline-flex; align-items: center; width: max-content; color: #1d4a7d; font-size: 12px; font-weight: 750; text-decoration: none; }
+.catalog-card-link::after { content: '→'; margin-left: 6px; }
+.catalog-sync-panel { display: grid; gap: 16px; }
+.catalog-sync-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.catalog-sync-heading h2, .catalog-sync-heading p { margin: 0; }
+.catalog-sync-heading p { margin-top: 5px; }
+.catalog-sync-summary { display: flex; flex-wrap: wrap; gap: 8px; }
+.catalog-sync-summary span { padding: 7px 10px; border: 1px solid #dce2e9; border-radius: 999px; color: #536378; background: #f5f7f9; font-size: 11px; }
+.catalog-sync-summary strong { color: #243a55; }
+.catalog-sync-summary .catalog-sync-pending { color: #855519; background: #fff4df; border-color: #ebcea0; }
+.catalog-sync-summary .catalog-sync-warning { color: #93413b; background: #fff0ee; border-color: #e5b4af; }
+.catalog-sync-table-wrap { max-height: 310px; overflow: auto; border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.catalog-sync-table-wrap table { background: #fff; }
+.catalog-sync-table-wrap thead { position: sticky; top: 0; z-index: 1; }
+.catalog-sync-table-wrap td:first-child { min-width: 250px; }
+.catalog-sync-status { display: inline-flex; padding: 4px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; }
+.catalog-sync-status-ok { color: var(--color-success); background: #e9f6f0; }
+.catalog-sync-status-desatualizado, .catalog-sync-status-sem_imagem { color: #855519; background: #fff1d8; }
+.catalog-sync-status-orfao { color: var(--color-danger); background: #fceeed; }
+.catalog-sync-empty { margin: 0; padding: 18px; color: var(--color-text-muted); text-align: center; }
+.catalog-sync-actions { display: flex; align-items: center; gap: 12px; }
+.catalog-sync-progress { display: grid; gap: 7px; }
+.catalog-sync-progress > div { display: flex; justify-content: space-between; gap: 12px; color: var(--color-text-muted); font-size: 12px; }
+.catalog-sync-progress progress { width: 100%; height: 11px; accent-color: var(--color-brand); }
+@media (hover: hover) and (pointer: fine) {
+  .catalog-card { transition: transform 160ms ease-out, box-shadow 160ms ease, border-color 160ms ease; }
+  .catalog-card:hover { border-color: #ccd8e6; box-shadow: 0 8px 20px rgb(24 39 58 / 8%); transform: translateY(-2px); }
+  .catalog-upload:hover { border-color: #b7c8da; background: #f2f6fa; }
+  .catalog-card-link:hover { color: #112f55; text-decoration: underline; text-underline-offset: 3px; }
+}
 .image-placeholder { aspect-ratio: 4 / 3; display: grid; place-items: center; border-radius: 10px; color: #7f8995; background: #e9e7e1; font-size: 28px; font-weight: 800; }
 
 @media (max-width: 900px) {
@@ -162,4 +208,13 @@ tbody tr:last-child td { border-bottom: 0; }
 
 @media (max-width: 620px) {
   .form-grid, .compact-grid { grid-template-columns: 1fr; }
+  .catalog-sync-heading { display: grid; }
+  .catalog-sync-heading .secondary-action { width: 100%; }
 }
+
+.modal-backdrop { position: fixed; inset: 0; background: rgba(20, 24, 28, 0.45); z-index: 90; }
+.modal-dialog { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 91; width: min(480px, calc(100vw - 32px)); }
+ .sale-products { display: block; color: var(--color-muted, #60738b); font-size: 0.8rem; margin-top: 5px; max-width: 38rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ .sale-payment { display: inline-block; padding: 4px 9px; border-radius: 999px; font-size: 0.78rem; background: #eef1f5; }
+ .sale-payment-paid { background: #e9f5ed; color: #23613b; }
+ .sale-payment-pending, .sale-payment-partially_paid { background: #fff3dc; color: #86551b; }

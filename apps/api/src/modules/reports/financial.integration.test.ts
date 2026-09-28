@@ -10,6 +10,16 @@ import { applyMigrations } from '../../shared/db/migrate.js'
 const connectionString = process.env['TEST_DATABASE_URL']
 if (!connectionString) throw new Error('TEST_DATABASE_URL is required for PostgreSQL integration tests.')
 
+type DailyPoint = { date: string; salesBySaleDate: string; confirmedPaymentsByReceiptDate: string }
+type ReceivableRow = { saleId: string; amountDue: string }
+type FinancialReportBody = {
+  comparison?: unknown
+  dailySeries: DailyPoint[]
+  receivables: ReceivableRow[]
+  receivablesBasis: string
+  overdueAsOf: string
+}
+
 describe('financial report HTTP flow', () => {
   const adminPool = new Pool({ connectionString, max: 1 })
   const schema = `erp2_test_${randomUUID().replaceAll('-', '')}`
@@ -59,7 +69,8 @@ describe('financial report HTTP flow', () => {
       headers: { cookie: `erp_session=${encodeURIComponent(sessionToken)}` },
     })
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toEqual({
+    const body = response.json() as unknown as FinancialReportBody
+    expect(body).toMatchObject({
       period: { from: '2026-08-01', to: '2026-08-31', timezone: 'America/Sao_Paulo' },
       bases: { sales: 'sale_created_at', cash: 'payment_received_at' },
       salesBySaleDate: '300.00',
@@ -75,6 +86,14 @@ describe('financial report HTTP flow', () => {
       paymentsByMethod: [{ method: 'pix', amount: '150.00' }],
       updatedAt: expect.any(String),
     })
+    expect(body.comparison).toBeUndefined()
+    expect(body.dailySeries).toHaveLength(31)
+    expect(body.dailySeries[9]).toEqual({ date: '2026-08-10', salesBySaleDate: '100.00', confirmedPaymentsByReceiptDate: '100.00' })
+    expect(body.dailySeries[0]).toEqual({ date: '2026-08-01', salesBySaleDate: '0.00', confirmedPaymentsByReceiptDate: '0.00' })
+    expect(body.receivables).toHaveLength(1)
+    expect(body.receivables[0]).toMatchObject({ amountDue: '150.00' })
+    expect(body.receivablesBasis).toContain('created')
+    expect(body.overdueAsOf).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
 
   it('ranks product variants from immutable sale snapshots while preserving current stock', async () => {
@@ -85,21 +104,38 @@ describe('financial report HTTP flow', () => {
     })
 
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toEqual({
+    const products = response.json() as unknown as {
+      period: unknown
+      filters: unknown
+      items: Array<Record<string, unknown>>
+      summary: Record<string, unknown>
+    }
+    expect(products).toMatchObject({
       period: { from: '2026-08-01', to: '2026-08-31', timezone: 'America/Sao_Paulo' },
-      items: [{
-        club: 'Relatório FC',
-        currentStockQuantity: 3,
-        grossProfit: '140.00',
-        historicalCost: '160.00',
-        model: 'Base',
-        salesAmount: '300.00',
-        size: 'M',
-        sku: expect.any(String),
-        type: 'Masculina',
-        unitsSold: 3,
-        variantId: expect.any(String),
-      }],
+      filters: { club: null, type: null, size: null },
+    })
+    expect(products.items).toEqual([{
+      club: 'Relatório FC',
+      currentStockQuantity: 3,
+      lowStockThreshold: expect.any(Number),
+      grossProfit: '140.00',
+      historicalCost: '160.00',
+      model: 'Base',
+      salesAmount: '300.00',
+      size: 'M',
+      sku: expect.any(String),
+      type: 'Masculina',
+      unitsSold: '3',
+      variantId: expect.any(String),
+      noTurnover: false,
+      lowStock: false,
+    }])
+    expect(products.summary).toMatchObject({
+      variantCount: 1,
+      totalUnitsSold: '3',
+      totalSalesAmount: '300.00',
+      totalGrossProfit: '140.00',
+      noTurnoverCount: 0,
     })
   })
 

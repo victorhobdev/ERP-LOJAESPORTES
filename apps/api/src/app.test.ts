@@ -20,6 +20,96 @@ describe('API foundation', () => {
     expect(response.json()).toEqual({ status: 'ok', service: 'erp-api' })
   })
 
+  it('reports not-ready without a pool and without leaking internals', async () => {
+    const previous = process.env['APP_VERSION']
+    delete process.env['APP_VERSION']
+    try {
+      const app = buildApp({ logger: false })
+      apps.push(app)
+
+      const response = await app.inject({ method: 'GET', url: '/health/ready' })
+
+      expect(response.statusCode).toBe(503)
+      expect(response.headers['x-request-id']).toBeTruthy()
+      expect(response.json()).toEqual({
+        status: 'not_ready',
+        service: 'erp-api',
+        version: '0.0.0',
+        checks: { database: 'unconfigured' },
+        integrations: { catalog: 'not_configured' },
+      })
+      expect(response.body).not.toContain('SELECT')
+    } finally {
+      if (previous === undefined) delete process.env['APP_VERSION']
+      else process.env['APP_VERSION'] = previous
+    }
+  })
+
+  it('reports ready with a healthy pool regardless of catalog flag', async () => {
+    const previousFlag = process.env['CATALOG_SYNC_ENABLED']
+    delete process.env['CATALOG_SYNC_ENABLED']
+    try {
+      const healthy = buildApp({ logger: false, pool: { query: async () => ({ rows: [] }) } as never })
+      apps.push(healthy)
+      const ready = await healthy.inject({ method: 'GET', url: '/health/ready' })
+      expect(ready.statusCode).toBe(200)
+      expect(ready.json()).toMatchObject({ status: 'ready', checks: { database: 'up' }, integrations: { catalog: 'not_configured' } })
+    } finally {
+      if (previousFlag === undefined) delete process.env['CATALOG_SYNC_ENABLED']
+      else process.env['CATALOG_SYNC_ENABLED'] = previousFlag
+    }
+
+    const previous = process.env['CATALOG_SYNC_ENABLED']
+    process.env['CATALOG_SYNC_ENABLED'] = 'true'
+    try {
+      const configured = buildApp({ logger: false, pool: { query: async () => ({ rows: [] }) } as never })
+      apps.push(configured)
+      const ready = await configured.inject({ method: 'GET', url: '/health/ready' })
+      expect(ready.statusCode).toBe(200)
+      expect(ready.json()).toMatchObject({ status: 'ready', checks: { database: 'up' }, integrations: { catalog: 'configured' } })
+    } finally {
+      if (previous === undefined) delete process.env['CATALOG_SYNC_ENABLED']
+      else process.env['CATALOG_SYNC_ENABLED'] = previous
+    }
+  })
+
+  it('sanitizes arbitrary APP_VERSION values', async () => {
+    const previous = process.env['APP_VERSION']
+    try {
+      for (const invalid of ['not a version!!', '1.2.3.4.5.6.7.8.9.10.11.12.13', '../secret', '']) {
+        process.env['APP_VERSION'] = invalid
+        const app = buildApp({ logger: false })
+        apps.push(app)
+        const response = await app.inject({ method: 'GET', url: '/health/ready' })
+        expect(response.json()).toMatchObject({ version: '0.0.0' })
+        if (invalid !== '') expect(response.body).not.toContain(invalid)
+      }
+      process.env['APP_VERSION'] = '2.4.1-rc.1+build.7'
+      const app = buildApp({ logger: false })
+      apps.push(app)
+      const response = await app.inject({ method: 'GET', url: '/health/ready' })
+      expect(response.json()).toMatchObject({ version: '2.4.1-rc.1+build.7' })
+    } finally {
+      if (previous === undefined) delete process.env['APP_VERSION']
+      else process.env['APP_VERSION'] = previous
+    }
+  })
+
+  it('sanitizes pool failures on readiness', async () => {
+    const app = buildApp({
+      logger: false,
+      pool: { query: async () => { throw new Error('postgres://secret-connection-detail') } } as never,
+    })
+    apps.push(app)
+
+    const response = await app.inject({ method: 'GET', url: '/health/ready' })
+
+    expect(response.statusCode).toBe(503)
+    expect(response.json()).toMatchObject({ status: 'not_ready', checks: { database: 'down' } })
+    expect(response.body).not.toContain('postgres://')
+    expect(response.body).not.toContain('secret-connection-detail')
+  })
+
   it('does not expose stack traces for unknown routes', async () => {
     const app = buildApp({ logger: false })
     apps.push(app)

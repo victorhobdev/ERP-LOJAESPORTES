@@ -9,18 +9,19 @@ import { hasValidCsrf, requirePermission, sendError } from '../../shared/auth/ht
 const statuses = ['pending', 'supplier_ordered', 'product_arrived', 'delivered', 'cancelled'] as const
 const createSchema = z.object({
   customerId: z.string().uuid(),
-  variantId: z.string().uuid().optional(),
-  linkedPurchaseOrderId: z.string().uuid().optional(),
+  variantId: z.string().uuid().nullish(),
+  linkedPurchaseOrderId: z.string().uuid().nullish(),
   club: z.string().trim().min(1).max(150),
   model: z.string().trim().min(1).max(150),
   type: z.enum(['Masculina', 'Feminina', 'Infantil']),
   size: z.string().trim().min(1).max(20),
-  notes: z.string().trim().max(1_000).optional(),
+  notes: z.string().trim().max(1_000).nullish(),
 })
-const statusSchema = z.object({ status: z.enum(statuses), reason: z.string().trim().max(500).optional() })
+const statusSchema = z.object({ status: z.enum(statuses), reason: z.string().trim().max(500).nullish() })
 const idSchema = z.object({ id: z.string().uuid() })
 const listSchema = z.object({
   status: z.enum(statuses).optional(),
+  search: z.string().trim().max(120).optional(),
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(50),
 })
@@ -39,9 +40,22 @@ export function registerCustomerOrderRoutes(app: FastifyInstance, pool: Pool) {
     if (!await requirePermission(pool, request, reply, 'customer_orders:write')) return
     const parsed = listSchema.safeParse(request.query)
     if (!parsed.success) return sendError(reply, request, 400, 'VALIDATION_ERROR', 'Filtros inválidos.')
-    const { status, page, limit } = parsed.data
+    const { status, search, page, limit } = parsed.data
     const values: unknown[] = []
-    const where = status ? `WHERE co.status = $${values.push(status)}` : ''
+    const push = (value: unknown) => { values.push(value); return `$${values.length}` }
+    const conditions: string[] = []
+    if (status) conditions.push(`co.status = ${push(status)}`)
+    if (search) {
+      const term = `%${search}%`
+      conditions.push(`(c.name ILIKE ${push(term)} OR coalesce(c.contact, '') ILIKE ${push(term)} OR co.club ILIKE ${push(term)} OR co.model ILIKE ${push(term)})`)
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+    const counted = await pool.query<{ total: string }>(
+      `SELECT count(DISTINCT co.id)::text AS total
+       FROM customer_orders co JOIN customers c ON c.id = co.customer_id ${where}`,
+      values,
+    )
+    const total = Number(counted.rows[0]?.total ?? 0)
     values.push(limit, (page - 1) * limit)
     const result = await pool.query(
       `SELECT co.id, co.status, co.club, co.model, co.type, co.size,
@@ -51,7 +65,7 @@ export function registerCustomerOrderRoutes(app: FastifyInstance, pool: Pool) {
        LIMIT $${values.length - 1} OFFSET $${values.length}`,
       values,
     )
-    return reply.send({ items: result.rows, page, limit })
+    return reply.send({ items: result.rows, total, page, limit })
   })
 
   app.post('/customer-orders', async (request, reply) => {
@@ -65,7 +79,13 @@ export function registerCustomerOrderRoutes(app: FastifyInstance, pool: Pool) {
     }
 
     const scope = `customer_order.create:${session.user_id}`
-    const requestHash = createHash('sha256').update(JSON.stringify(parsed.data)).digest('hex')
+    const canonical = {
+      ...parsed.data,
+      variantId: parsed.data.variantId ?? undefined,
+      linkedPurchaseOrderId: parsed.data.linkedPurchaseOrderId ?? undefined,
+      notes: parsed.data.notes ?? undefined,
+    }
+    const requestHash = createHash('sha256').update(JSON.stringify(canonical)).digest('hex')
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -85,14 +105,14 @@ export function registerCustomerOrderRoutes(app: FastifyInstance, pool: Pool) {
         return sendError(reply, request, 404, 'CUSTOMER_NOT_FOUND', 'Cliente não encontrado.')
       }
       if (parsed.data.variantId) {
-        const variant = await client.query('SELECT 1 FROM product_variants WHERE id = $1', [parsed.data.variantId])
+        const variant = await client.query('SELECT 1 FROM product_variants WHERE id = $1', [canonical.variantId])
         if (!variant.rowCount) {
           await client.query('ROLLBACK')
           return sendError(reply, request, 404, 'VARIANT_NOT_FOUND', 'Variação não encontrada.')
         }
       }
       if (parsed.data.linkedPurchaseOrderId) {
-        const purchase = await client.query('SELECT 1 FROM purchase_orders WHERE id = $1', [parsed.data.linkedPurchaseOrderId])
+        const purchase = await client.query('SELECT 1 FROM purchase_orders WHERE id = $1', [canonical.linkedPurchaseOrderId])
         if (!purchase.rowCount) {
           await client.query('ROLLBACK')
           return sendError(reply, request, 404, 'PURCHASE_ORDER_NOT_FOUND', 'Pedido de compra não encontrado.')
@@ -104,7 +124,7 @@ export function registerCustomerOrderRoutes(app: FastifyInstance, pool: Pool) {
         `INSERT INTO customer_orders
            (id, customer_id, variant_id, created_by, club, model, type, size, notes, linked_purchase_order_id)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-        [id, parsed.data.customerId, parsed.data.variantId ?? null, session.user_id, parsed.data.club, parsed.data.model, parsed.data.type, parsed.data.size, parsed.data.notes ?? null, parsed.data.linkedPurchaseOrderId ?? null],
+        [id, canonical.customerId, canonical.variantId ?? null, session.user_id, canonical.club, canonical.model, canonical.type, canonical.size, canonical.notes ?? null, canonical.linkedPurchaseOrderId ?? null],
       )
       await insertEvent(client, id, null, 'pending', null, session.user_id)
       await client.query(
@@ -114,13 +134,13 @@ export function registerCustomerOrderRoutes(app: FastifyInstance, pool: Pool) {
       )
       const response = {
         id,
-        customerId: parsed.data.customerId,
-        variantId: parsed.data.variantId ?? null,
-        linkedPurchaseOrderId: parsed.data.linkedPurchaseOrderId ?? null,
-        club: parsed.data.club,
-        model: parsed.data.model,
-        type: parsed.data.type,
-        size: parsed.data.size,
+        customerId: canonical.customerId,
+        variantId: canonical.variantId ?? null,
+        linkedPurchaseOrderId: canonical.linkedPurchaseOrderId ?? null,
+        club: canonical.club,
+        model: canonical.model,
+        type: canonical.type,
+        size: canonical.size,
         status: 'pending',
       }
       await store(client, scope, key, 201, response)
@@ -149,7 +169,8 @@ export function registerCustomerOrderRoutes(app: FastifyInstance, pool: Pool) {
     }
 
     const scope = `customer_order.status:${session.user_id}:${params.data.id}`
-    const requestHash = createHash('sha256').update(JSON.stringify(parsed.data)).digest('hex')
+    const canonical = { status: parsed.data.status, ...(parsed.data.reason ? { reason: parsed.data.reason } : {}) }
+    const requestHash = createHash('sha256').update(JSON.stringify(canonical)).digest('hex')
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
@@ -206,17 +227,30 @@ export function registerCustomerOrderRoutes(app: FastifyInstance, pool: Pool) {
     const params = idSchema.safeParse(request.params)
     if (!params.success) return sendError(reply, request, 400, 'VALIDATION_ERROR', 'Encomenda inválida.')
     const result = await pool.query(
-      `SELECT id, customer_id AS "customerId", variant_id AS "variantId",
-              linked_purchase_order_id AS "linkedPurchaseOrderId", club, model, type, size, notes,
-              status, cancellation_reason AS "cancellationReason"
-       FROM customer_orders WHERE id = $1`,
+      `SELECT co.id, co.customer_id AS "customerId", co.variant_id AS "variantId",
+              co.linked_purchase_order_id AS "linkedPurchaseOrderId", co.club, co.model, co.type, co.size, co.notes,
+              co.status, co.cancellation_reason AS "cancellationReason",
+              co.created_at::text AS "createdAt", co.updated_at::text AS "updatedAt",
+              c.name AS "customerName", c.contact AS "customerContact",
+              u.display_name AS "operatorDisplayName",
+              v.type AS "variantType", v.size AS "variantSize", v.sku AS "variantSku",
+              v.sale_price::text AS "variantSalePrice", v.stock_quantity AS "variantStockQuantity",
+              p.club AS "variantClub", p.model AS "variantModel"
+       FROM customer_orders co
+       JOIN customers c ON c.id = co.customer_id
+       JOIN users u ON u.id = co.created_by
+       LEFT JOIN product_variants v ON v.id = co.variant_id
+       LEFT JOIN products p ON p.id = v.product_id
+       WHERE co.id = $1`,
       [params.data.id],
     )
     const order = result.rows[0]
     if (!order) return sendError(reply, request, 404, 'CUSTOMER_ORDER_NOT_FOUND', 'Encomenda não encontrada.')
     const timeline = await pool.query(
-      `SELECT id, from_status AS "fromStatus", to_status AS "toStatus", reason, created_at::text AS "createdAt"
-       FROM customer_order_events WHERE customer_order_id = $1 ORDER BY created_at, id`,
+      `SELECT e.id, e.from_status AS "fromStatus", e.to_status AS "toStatus", e.reason,
+              e.created_at::text AS "createdAt", u.display_name AS "userDisplayName"
+       FROM customer_order_events e JOIN users u ON u.id = e.user_id
+       WHERE e.customer_order_id = $1 ORDER BY e.created_at, e.id`,
       [params.data.id],
     )
     return reply.send({ ...order, timeline: timeline.rows })

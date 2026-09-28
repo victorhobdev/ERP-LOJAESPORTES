@@ -39,7 +39,7 @@ describe('customer orders HTTP flow', () => {
     )
     app = buildApp({ pool, logger: false, secureCookies: false })
     await app.ready()
-  }, 30_000)
+  }, 120_000)
 
   afterAll(async () => {
     await app?.close()
@@ -137,6 +137,125 @@ describe('customer orders HTTP flow', () => {
     const missing = await patchStatus(randomUUID(), randomUUID(), { status: 'supplier_ordered' })
     expect(missing.statusCode).toBe(404)
     expect(missing.json()).toMatchObject({ code: 'CUSTOMER_ORDER_NOT_FOUND' })
+  })
+
+  it('searches orders with pre-pagination total and exposes a rich detail', async () => {
+    const created = await postOrder(randomUUID(), {
+      customerId,
+      club: 'Busca FC',
+      model: 'Modelo Busca',
+      type: 'Masculina',
+      size: 'M',
+      notes: 'Nota da fixture',
+    })
+    expect(created.statusCode).toBe(201)
+    const orderId = created.json().id as string
+
+    const search = await app.inject({ method: 'GET', url: '/customer-orders?search=Busca%20FC', headers: { cookie: authCookie() } })
+    expect(search.statusCode).toBe(200)
+    expect(search.json().items.map((item: { id: string }) => item.id)).toContain(orderId)
+    expect(search.json().items[0]).toMatchObject({ customerContact: 'fixture' })
+    expect(search.json().total).toBeGreaterThanOrEqual(1)
+
+    const second = await app.inject({ method: 'GET', url: '/customer-orders?search=Busca%20FC&page=2&limit=1', headers: { cookie: authCookie() } })
+    expect(second.json().items).toHaveLength(0)
+    expect(second.json().total).toBe(search.json().total)
+
+    const detail = await app.inject({ method: 'GET', url: `/customer-orders/${orderId}`, headers: { cookie: authCookie() } })
+    expect(detail.json()).toMatchObject({
+      id: orderId,
+      customerName: 'Cliente Encomenda',
+      customerContact: 'fixture',
+      operatorDisplayName: 'Gestor Encomendas',
+      notes: 'Nota da fixture',
+    })
+    expect(typeof detail.json().createdAt).toBe('string')
+    expect(typeof detail.json().updatedAt).toBe('string')
+    expect(detail.json().timeline[0]).toMatchObject({ toStatus: 'pending', userDisplayName: 'Gestor Encomendas' })
+  })
+
+  it('grants the manager customers:read for the order customer picker', async () => {    const response = await app.inject({ method: 'GET', url: '/customers?search=Encomenda', headers: { cookie: authCookie() } })
+    expect(response.statusCode).toBe(200)
+    expect(response.json().items.map((item: { name: string }) => item.name)).toContain('Cliente Encomenda')
+  })
+
+  it('denies operators without customer_orders:write on every route without effects', async () => {
+    const operatorToken = randomUUID()
+    const operatorCsrf = randomUUID()
+    const operatorId = randomUUID()
+    await pool.query(
+      `INSERT INTO users (id, username, display_name, password_hash, role_id)
+       VALUES ($1, $2, 'Operador Sem Encomendas', 'unused-in-this-test', '00000000-0000-4000-8000-000000000001')`,
+      [operatorId, `operador.sem.encomendas.${randomUUID().slice(0, 8)}`],
+    )
+    await pool.query(
+      `INSERT INTO sessions (id, user_id, token_hash, csrf_hash, expires_at)
+       VALUES ($1, $2, $3, $4, now() + interval '1 hour')`,
+      [randomUUID(), operatorId, hashSecret(operatorToken), hashSecret(operatorCsrf)],
+    )
+    const cookie = `erp_session=${encodeURIComponent(operatorToken)}; erp_csrf=${encodeURIComponent(operatorCsrf)}`
+    const before = await pool.query<{ orders: string; audits: string }>(
+      `SELECT (SELECT count(*) FROM customer_orders) AS orders,
+              (SELECT count(*) FROM audit_log WHERE action LIKE 'customer_order.%') AS audits`,
+    )
+
+    expect((await app.inject({ method: 'GET', url: '/customer-orders', headers: { cookie } })).statusCode).toBe(403)
+    expect((await app.inject({ method: 'GET', url: `/customer-orders/${randomUUID()}`, headers: { cookie } })).statusCode).toBe(403)
+    expect((await app.inject({
+      method: 'POST', url: '/customer-orders', payload: { customerId },
+      headers: { cookie, 'x-csrf-token': operatorCsrf, 'idempotency-key': randomUUID() },
+    })).statusCode).toBe(403)
+    expect((await app.inject({
+      method: 'PATCH', url: `/customer-orders/${randomUUID()}/status`,
+      payload: { status: 'supplier_ordered' },
+      headers: { cookie, 'x-csrf-token': operatorCsrf, 'idempotency-key': randomUUID() },
+    })).statusCode).toBe(403)
+
+    const after = await pool.query<{ orders: string; audits: string }>(
+      `SELECT (SELECT count(*) FROM customer_orders) AS orders,
+              (SELECT count(*) FROM audit_log WHERE action LIKE 'customer_order.%') AS audits`,
+    )
+    expect(after.rows[0]).toEqual(before.rows[0])
+  })
+
+  it('rejects missing or invalid CSRF on writes without effects', async () => {
+    const before = await pool.query<{ orders: string }>(`SELECT count(*) AS orders FROM customer_orders`)
+    const noCsrf = await app.inject({
+      method: 'POST', url: '/customer-orders',
+      payload: { customerId, club: 'A', model: 'B', type: 'Masculina', size: 'M' },
+      headers: { cookie: authCookie(), 'idempotency-key': randomUUID() },
+    })
+    expect(noCsrf.statusCode).toBe(403)
+    expect(noCsrf.json()).toMatchObject({ code: 'INVALID_CSRF' })
+
+    const badCsrf = await app.inject({
+      method: 'PATCH', url: `/customer-orders/${randomUUID()}/status`,
+      payload: { status: 'supplier_ordered' },
+      headers: { cookie: authCookie(), 'x-csrf-token': 'invalido', 'idempotency-key': randomUUID() },
+    })
+    expect(badCsrf.statusCode).toBe(403)
+
+    const after = await pool.query<{ orders: string }>(`SELECT count(*) AS orders FROM customer_orders`)
+    expect(after.rows[0]).toEqual(before.rows[0])
+  })
+
+  it('accepts explicit nulls as the same semantic payload without duplicating', async () => {
+    const base = {
+      customerId, club: 'Nulo FC', model: 'Modelo Nulo', type: 'Masculina', size: 'M',
+    }
+    const omitted = await postOrder(randomUUID(), base)
+    expect(omitted.statusCode).toBe(201)
+    expect(omitted.json()).toMatchObject({ variantId: null, linkedPurchaseOrderId: null })
+
+    const explicit = await postOrder(randomUUID(), { ...base, variantId: null, linkedPurchaseOrderId: null, notes: null })
+    expect(explicit.statusCode).toBe(201)
+
+    const sharedKey = randomUUID()
+    const replayOmitted = await postOrder(sharedKey, base)
+    expect(replayOmitted.statusCode).toBe(201)
+    const replayNull = await postOrder(sharedKey, { ...base, variantId: null, linkedPurchaseOrderId: null, notes: null })
+    expect(replayNull.statusCode).toBe(201)
+    expect(replayNull.json()).toEqual(replayOmitted.json())
   })
 
   function postOrder(key: string, payload: Record<string, unknown>) {

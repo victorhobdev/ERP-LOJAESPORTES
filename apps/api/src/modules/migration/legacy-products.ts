@@ -216,7 +216,7 @@ async function findCompletedRun(pool: Pool, sourceName: string, sourceChecksum: 
   return row ? { runId: row.id, sourceChecksum, counts: row.counts } : undefined
 }
 
-function checksum(rows: unknown[]): string {
+export function checksum(rows: unknown[]): string {
   const canonicalRows = rows.map(canonicalJson).sort()
   return createHash('sha256').update(JSON.stringify(canonicalRows)).digest('hex')
 }
@@ -229,7 +229,7 @@ function canonicalJson(value: unknown): string {
   return JSON.stringify(value)
 }
 
-function deterministicUuid(value: string): string {
+export function deterministicUuid(value: string): string {
   const bytes = createHash('sha256').update(value).digest().subarray(0, 16)
   bytes[6] = (bytes[6]! & 0x0f) | 0x80
   bytes[8] = (bytes[8]! & 0x3f) | 0x80

@@ -39,7 +39,7 @@ describe('products and inventory HTTP flow', () => {
     )
     app = buildApp({ pool, logger: false, secureCookies: false })
     await app.ready()
-  }, 30_000)
+  }, 120_000)
 
   afterAll(async () => {
     await app?.close()

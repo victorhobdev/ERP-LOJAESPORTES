@@ -32,7 +32,7 @@ describe('PostgreSQL server integration', () => {
     const first = await applyMigrations(pool)
     const second = await applyMigrations(pool)
 
-    expect(first.applied).toEqual(['001_initial.sql', '002_manager_purchase_read.sql'])
+    expect(first.applied).toEqual(['001_initial.sql', '002_manager_purchase_read.sql', '003_manager_customers_read.sql'])
     expect(second.applied).toEqual([])
     const result = await pool.query<{ filename: string; checksum: string }>(
       'SELECT filename, checksum FROM schema_migrations ORDER BY filename',
@@ -40,8 +40,11 @@ describe('PostgreSQL server integration', () => {
     expect(result.rows).toEqual([
       { filename: '001_initial.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) },
       { filename: '002_manager_purchase_read.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) },
+      { filename: '003_manager_customers_read.sql', checksum: expect.stringMatching(/^[a-f0-9]{64}$/) },
     ])
-  }, 30_000)
+    const manager = await pool.query<{ permissions: string[] }>(`SELECT permissions FROM roles WHERE name = 'manager'`)
+    expect(manager.rows[0]?.permissions).toEqual(expect.arrayContaining(['customers:read', 'purchases:read']))
+  }, 120_000)
 
   it('rolls back partial writes in a real transaction', async () => {
     const client = await pool.connect()

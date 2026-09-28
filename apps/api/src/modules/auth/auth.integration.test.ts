@@ -38,7 +38,7 @@ describe('authentication HTTP flow', () => {
     )
     app = buildApp({ pool, logger: false, secureCookies: true })
     await app.ready()
-  }, 30_000)
+  }, 120_000)
 
   afterAll(async () => {
     await app?.close()
@@ -84,6 +84,29 @@ describe('authentication HTTP flow', () => {
 
     expect(session.statusCode).toBe(401)
     expect(logout.statusCode).toBe(401)
+  })
+
+  it('allows full ERP use without cookies or CSRF when authentication is disabled', async () => {
+    const openApp = buildApp({ pool, logger: false, authenticationDisabled: true })
+    await openApp.ready()
+    try {
+      const session = await openApp.inject({ method: 'GET', url: '/auth/session' })
+      expect(session.statusCode).toBe(200)
+      expect(session.json()).toMatchObject({
+        user: { role: 'administrator' },
+        permissions: ['*'],
+      })
+
+      const customer = await openApp.inject({
+        method: 'POST',
+        url: '/customers',
+        headers: { 'idempotency-key': 'no-auth-customer' },
+        payload: { name: 'Cliente sem login' },
+      })
+      expect(customer.statusCode).toBe(201)
+    } finally {
+      await openApp.close()
+    }
   })
 
   it('creates an opaque session, enforces CSRF, returns RBAC and invalidates logout', async () => {

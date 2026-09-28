@@ -32,6 +32,117 @@ jobs:
       - run: pnpm --filter @erp/api test:coverage:all
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+      - name: full-stack paid sale against the test database
+        env:
+          E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/erp2_test
+        run: |
+          SEED_JSON=$(pnpm --filter @erp/api seed:e2e | tail -n 1)
+          export E2E_FULLSTACK=1
+          export E2E_DATABASE_URL
+          export E2E_USERNAME=$(node -e "console.log(JSON.parse(process.argv[1]).username)" "$SEED_JSON")
+          export E2E_PASSWORD=$(node -e "console.log(JSON.parse(process.argv[1]).password)" "$SEED_JSON")
+          export E2E_CLUB=$(node -e "console.log(JSON.parse(process.argv[1]).club)" "$SEED_JSON")
+          export E2E_MODEL=$(node -e "console.log(JSON.parse(process.argv[1]).model)" "$SEED_JSON")
+          export E2E_VARIANT_ID=$(node -e "console.log(JSON.parse(process.argv[1]).variantId)" "$SEED_JSON")
+          pnpm exec playwright test tests/e2e/paid-sale-fullstack.spec.ts
+          pnpm --filter @erp/api verify:e2e
+      - name: full-stack catalog (upload, media e sync local) against the test database
+        env:
+          E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/erp2_test
+          E2E_MEDIA_DIR: ${{ github.workspace }}/e2e-artifacts/media
+          E2E_SYNC_DIR: ${{ github.workspace }}/e2e-artifacts/catalog-sync
+        run: |
+          SEED_JSON=$(pnpm --filter @erp/api seed:inventory-e2e | tail -n 1)
+          export E2E_FULLSTACK=1
+          export E2E_DATABASE_URL
+          export E2E_USERNAME=$(node -e "console.log(JSON.parse(process.argv[1]).username)" "$SEED_JSON")
+          export E2E_PASSWORD=$(node -e "console.log(JSON.parse(process.argv[1]).password)" "$SEED_JSON")
+          export E2E_TAG=$(node -e "console.log(JSON.parse(process.argv[1]).tag)" "$SEED_JSON")
+          pnpm exec playwright test tests/e2e/catalog-fullstack.spec.ts
+      - name: full-stack inventory against the test database
+        env:
+          E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/erp2_test
+        run: |
+          SEED_JSON=$(pnpm --filter @erp/api seed:inventory-e2e | tail -n 1)
+          export E2E_FULLSTACK=1
+          export E2E_DATABASE_URL
+          export E2E_USERNAME=$(node -e "console.log(JSON.parse(process.argv[1]).username)" "$SEED_JSON")
+          export E2E_PASSWORD=$(node -e "console.log(JSON.parse(process.argv[1]).password)" "$SEED_JSON")
+          export E2E_TAG=$(node -e "console.log(JSON.parse(process.argv[1]).tag)" "$SEED_JSON")
+          pnpm exec playwright test tests/e2e/inventory-fullstack.spec.ts
+          pnpm --filter @erp/api verify:inventory-e2e
+      - name: full-stack sales against the test database
+        env:
+          E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/erp2_test
+        run: |
+          SEED_JSON=$(pnpm --filter @erp/api seed:sales-e2e | tail -n 1)
+          export E2E_FULLSTACK=1
+          export E2E_DATABASE_URL
+          export E2E_USERNAME=$(node -e "console.log(JSON.parse(process.argv[1]).username)" "$SEED_JSON")
+          export E2E_PASSWORD=$(node -e "console.log(JSON.parse(process.argv[1]).password)" "$SEED_JSON")
+          export E2E_TAG=$(node -e "console.log(JSON.parse(process.argv[1]).tag)" "$SEED_JSON")
+          export E2E_SALE_ID=$(node -e "console.log(JSON.parse(process.argv[1]).saleId)" "$SEED_JSON")
+          export E2E_VARIANT_ID=$(node -e "console.log(JSON.parse(process.argv[1]).variantId)" "$SEED_JSON")
+          pnpm exec playwright test tests/e2e/sales-fullstack.spec.ts
+          pnpm --filter @erp/api verify:sales-e2e
+          MULTI_SEED_JSON=$(pnpm --filter @erp/api seed:sales-e2e | tail -n 1)
+          export E2E_USERNAME=$(node -e "console.log(JSON.parse(process.argv[1]).username)" "$MULTI_SEED_JSON")
+          export E2E_PASSWORD=$(node -e "console.log(JSON.parse(process.argv[1]).password)" "$MULTI_SEED_JSON")
+          export E2E_TAG=$(node -e "console.log(JSON.parse(process.argv[1]).tag)" "$MULTI_SEED_JSON")
+          export E2E_SALE_ID=$(node -e "console.log(JSON.parse(process.argv[1]).saleId)" "$MULTI_SEED_JSON")
+          export E2E_VARIANT_ID=$(node -e "console.log(JSON.parse(process.argv[1]).variantId)" "$MULTI_SEED_JSON")
+          pnpm exec playwright test tests/e2e/multi-payments-fullstack.spec.ts
+          pnpm --filter @erp/api verify:multi-payments-e2e
+          pnpm exec playwright test tests/e2e/sale-creation-fullstack.spec.ts
+          pnpm --filter @erp/api verify:sale-creation-e2e
+      - name: full-stack purchases against the test database
+        env:
+          E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/erp2_test
+        run: |
+          SEED_JSON=$(pnpm --filter @erp/api seed:purchases-e2e | tail -n 1)
+          export E2E_FULLSTACK=1
+          export E2E_DATABASE_URL
+          export E2E_USERNAME=$(node -e "console.log(JSON.parse(process.argv[1]).username)" "$SEED_JSON")
+          export E2E_PASSWORD=$(node -e "console.log(JSON.parse(process.argv[1]).password)" "$SEED_JSON")
+          export E2E_TAG=$(node -e "console.log(JSON.parse(process.argv[1]).tag)" "$SEED_JSON")
+          export E2E_VARIANT_ID=$(node -e "console.log(JSON.parse(process.argv[1]).variantId)" "$SEED_JSON")
+          pnpm exec playwright test tests/e2e/purchases-fullstack.spec.ts
+          pnpm --filter @erp/api verify:purchases-e2e
+      - name: full-stack customer orders against the test database
+        env:
+          E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/erp2_test
+        run: |
+          SEED_JSON=$(pnpm --filter @erp/api seed:customer-orders-e2e | tail -n 1)
+          export E2E_FULLSTACK=1
+          export E2E_DATABASE_URL
+          export E2E_USERNAME=$(node -e "console.log(JSON.parse(process.argv[1]).username)" "$SEED_JSON")
+          export E2E_PASSWORD=$(node -e "console.log(JSON.parse(process.argv[1]).password)" "$SEED_JSON")
+          export E2E_TAG=$(node -e "console.log(JSON.parse(process.argv[1]).tag)" "$SEED_JSON")
+          export E2E_USER_ID=$(node -e "console.log(JSON.parse(process.argv[1]).userId)" "$SEED_JSON")
+          pnpm exec playwright test tests/e2e/customer-orders-fullstack.spec.ts
+          pnpm --filter @erp/api verify:customer-orders-e2e
+      - name: full-stack financial report against the test database
+        env:
+          E2E_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/erp2_test
+        run: |
+          SEED_JSON=$(pnpm --filter @erp/api seed:financial-report-e2e | tail -n 1)
+          export E2E_FULLSTACK=1
+          export E2E_DATABASE_URL
+          export E2E_USERNAME=$(node -e "console.log(JSON.parse(process.argv[1]).username)" "$SEED_JSON")
+          export E2E_PASSWORD=$(node -e "console.log(JSON.parse(process.argv[1]).password)" "$SEED_JSON")
+          export E2E_TAG=$(node -e "console.log(JSON.parse(process.argv[1]).tag)" "$SEED_JSON")
+          export E2E_PARTIAL_SALE_ID=$(node -e "console.log(JSON.parse(process.argv[1]).partialSaleId)" "$SEED_JSON")
+          export E2E_PENDING_SALE_ID=$(node -e "console.log(JSON.parse(process.argv[1]).pendingSaleId)" "$SEED_JSON")
+          export E2E_FROM=$(node -e "console.log(JSON.parse(process.argv[1]).from)" "$SEED_JSON")
+          export E2E_MID=$(node -e "console.log(JSON.parse(process.argv[1]).mid)" "$SEED_JSON")
+          export E2E_TO=$(node -e "console.log(JSON.parse(process.argv[1]).to)" "$SEED_JSON")
+          export E2E_PREV_FROM=$(node -e "console.log(JSON.parse(process.argv[1]).prevFrom)" "$SEED_JSON")
+          export E2E_PREV_TO=$(node -e "console.log(JSON.parse(process.argv[1]).prevTo)" "$SEED_JSON")
+          export E2E_SEED_SALES=$(node -e "console.log(JSON.parse(process.argv[1]).sales)" "$SEED_JSON")
+          export E2E_SEED_PAYMENTS=$(node -e "console.log(JSON.parse(process.argv[1]).payments)" "$SEED_JSON")
+          export E2E_SEED_AUDITS=$(node -e "console.log(JSON.parse(process.argv[1]).audits)" "$SEED_JSON")
+          pnpm exec playwright test tests/e2e/financial-report-fullstack.spec.ts
+          pnpm --filter @erp/api verify:financial-report-e2e
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

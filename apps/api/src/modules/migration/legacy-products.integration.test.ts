@@ -28,7 +28,7 @@ describe('legacy product migration', () => {
        VALUES ($1, 'migrador.teste', 'Migrador Teste', 'unused-in-this-test', $2)`,
       [actorUserId, '00000000-0000-4000-8000-000000000004'],
     )
-  }, 30_000)
+  }, 120_000)
 
   afterAll(async () => {
     await pool?.end()

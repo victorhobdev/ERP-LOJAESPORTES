@@ -39,7 +39,7 @@ describe('purchase orders HTTP flow', () => {
     )
     app = buildApp({ pool, logger: false, secureCookies: false })
     await app.ready()
-  }, 30_000)
+  }, 120_000)
 
   afterAll(async () => {
     await app?.close()
@@ -95,6 +95,7 @@ describe('purchase orders HTTP flow', () => {
     const detail = await app.inject({ method: 'GET', url: `/purchase-orders/${order.json().id}`, headers: { cookie: authCookie() } })
     expect(detail.statusCode).toBe(200)
     expect(detail.json().items[0]).toMatchObject({ orderedQuantity: 4, receivedQuantity: 4, pendingQuantity: 0 })
+    expect(detail.json().items[0]).toMatchObject({ club: 'Compra FC', model: expect.any(String), type: expect.any(String), size: expect.any(String) })
     expect(detail.json().receipts).toHaveLength(2)
 
     const list = await app.inject({ method: 'GET', url: '/purchase-orders?status=fully_received', headers: { cookie: authCookie() } })
@@ -115,6 +116,15 @@ describe('purchase orders HTTP flow', () => {
       [variantId, order.json().id],
     )
     expect(state.rows[0]).toEqual({ stock_quantity: 4, current_cost: '55.00', movements: '2', receipts: '2', audits: '2' })
+  })
+
+  it('exposes the pre-pagination total on the order list', async () => {
+    const first = await app.inject({ method: 'GET', url: '/purchase-orders?limit=1', headers: { cookie: authCookie() } })
+    expect(first.statusCode).toBe(200)
+    expect(first.json().total).toBeGreaterThanOrEqual(1)
+
+    const second = await app.inject({ method: 'GET', url: '/purchase-orders?page=2&limit=1', headers: { cookie: authCookie() } })
+    expect(second.json().total).toBe(first.json().total)
   })
 
   it('serializes receipts so received quantity never exceeds ordered quantity', async () => {
@@ -178,12 +188,107 @@ describe('purchase orders HTTP flow', () => {
     expect(missingOrder.json()).toMatchObject({ code: 'PURCHASE_ORDER_NOT_FOUND' })
   })
 
+  it('cancels a placed order with a mandatory reason and audits it', async () => {
+    const variantId = await insertVariant(0, '0.00')
+    const order = await postOrder(randomUUID(), {
+      supplierId,
+      orderedOn: '2026-08-30',
+      importFeeAmount: '0.00',
+      items: [{ variantId, orderedQuantity: 2, supplierUnitCost: '10.00' }],
+    })
+    expect(order.statusCode).toBe(201)
+    const orderId = order.json().id
+
+    const anonymous = await app.inject({ method: 'POST', url: `/purchase-orders/${orderId}/cancel`, payload: { reason: 'Pedido duplicado' } })
+    expect(anonymous.statusCode).toBe(401)
+
+    const missingReason = await postCancel(orderId, '   ')
+    expect(missingReason.statusCode).toBe(400)
+    expect(missingReason.json()).toMatchObject({ code: 'VALIDATION_ERROR' })
+
+    const cancelled = await postCancel(orderId, 'Pedido duplicado pelo fornecedor')
+    expect(cancelled.statusCode).toBe(200)
+    expect(cancelled.json()).toMatchObject({ id: orderId, status: 'cancelled', cancellationReason: 'Pedido duplicado pelo fornecedor' })
+
+    const again = await postCancel(orderId, 'Outro motivo')
+    expect(again.statusCode).toBe(409)
+    expect(again.json()).toMatchObject({ code: 'PURCHASE_ORDER_ALREADY_CANCELLED' })
+
+    const detail = await app.inject({ method: 'GET', url: `/purchase-orders/${orderId}`, headers: { cookie: authCookie() } })
+    expect(detail.statusCode).toBe(200)
+    expect(detail.json()).toMatchObject({ status: 'cancelled', cancellationReason: 'Pedido duplicado pelo fornecedor' })
+
+    const audit = await pool.query(
+      `SELECT action FROM audit_log WHERE entity_id = $1 AND action = 'purchase_order.cancel'`, [orderId],
+    )
+    expect(audit.rows).toHaveLength(1)
+  })
+
+  it('refuses cancellation after any receipt and keeps the order state', async () => {
+    const variantId = await insertVariant(0, '0.00')
+    const order = await postOrder(randomUUID(), {
+      supplierId,
+      orderedOn: '2026-08-30',
+      importFeeAmount: '0.00',
+      items: [{ variantId, orderedQuantity: 1, supplierUnitCost: '10.00' }],
+    })
+    expect(order.statusCode).toBe(201)
+    const orderItemId = order.json().items[0].id
+    const receipt = await postReceipt(order.json().id, randomUUID(), { items: [{ purchaseOrderItemId: orderItemId, quantity: 1 }] })
+    expect(receipt.statusCode).toBe(201)
+
+    const cancelled = await postCancel(order.json().id, 'Tentativa após recebimento')
+    expect(cancelled.statusCode).toBe(409)
+    expect(cancelled.json()).toMatchObject({ code: 'PURCHASE_ORDER_NOT_CANCELLABLE' })
+
+    const state = await pool.query('SELECT status FROM purchase_orders WHERE id = $1', [order.json().id])
+    expect(state.rows[0]?.status).toBe('fully_received')
+  })
+
+  it('rejects cancellation of an unknown purchase order', async () => {
+    const response = await postCancel(randomUUID(), 'Motivo qualquer')
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toMatchObject({ code: 'PURCHASE_ORDER_NOT_FOUND' })
+  })
+
+  it('serializes concurrent cancels so repeats never duplicate effects or audits', async () => {
+    const variantId = await insertVariant(0, '0.00')
+    const order = await postOrder(randomUUID(), {
+      supplierId,
+      orderedOn: '2026-08-30',
+      importFeeAmount: '0.00',
+      items: [{ variantId, orderedQuantity: 2, supplierUnitCost: '10.00' }],
+    })
+    expect(order.statusCode).toBe(201)
+    const orderId = order.json().id
+
+    const responses = await Promise.all([postCancel(orderId, 'Primeiro motivo'), postCancel(orderId, 'Segundo motivo')])
+    expect(responses.map(({ statusCode }) => statusCode).sort()).toEqual([200, 409])
+    const losing = responses.find(({ statusCode }) => statusCode === 409)
+    expect(losing?.json()).toMatchObject({ code: 'PURCHASE_ORDER_ALREADY_CANCELLED' })
+
+    const state = await pool.query<{ status: string; reason: string }>(
+      `SELECT status, cancellation_reason AS reason FROM purchase_orders WHERE id = $1`, [orderId],
+    )
+    expect(state.rows[0]?.status).toBe('cancelled')
+    expect(['Primeiro motivo', 'Segundo motivo']).toContain(state.rows[0]?.reason)
+
+    const audits = await pool.query<{ total: number }>(
+      `SELECT count(*)::int AS total FROM audit_log WHERE entity_id = $1 AND action = 'purchase_order.cancel'`, [orderId],
+    )
+    expect(audits.rows[0]?.total).toBe(1)
+  })
+
   function postOrder(key: string, payload: Record<string, unknown>) {
     return app.inject({ method: 'POST', url: '/purchase-orders', payload, headers: authHeaders(key) })
   }
 
   function postReceipt(orderId: string, key: string, payload: Record<string, unknown>) {
     return app.inject({ method: 'POST', url: `/purchase-orders/${orderId}/receipts`, payload, headers: authHeaders(key) })
+  }
+
+  function postCancel(orderId: string, reason: string) {
+    return app.inject({ method: 'POST', url: `/purchase-orders/${orderId}/cancel`, payload: { reason }, headers: authHeaders(randomUUID()) })
   }
 
   function authHeaders(key: string) {

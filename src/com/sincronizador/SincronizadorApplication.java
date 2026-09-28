@@ -30,7 +30,7 @@ public class SincronizadorApplication extends Application {
     private static final String PROPERTIES_PATH = "/app.properties";
     private static final String KEY_FOLDER_ID = "catalogo.folderId";
     private static final Path CATALOGO_LOCAL_DIR = Path.of(
-            "C:\\Users\\Vitinho\\Desktop\\Vitinho Artigos Esportivos\\Catálogo"
+            "C:\\Users\\Vitinho\\Desktop\\Vitinho Artigos Esportivos\\Pronta Entrega"
     );
     private static final Path CATALOGO_DATA_DIR = CatalogoDataConfig.resolverCatalogoDataDir();
 

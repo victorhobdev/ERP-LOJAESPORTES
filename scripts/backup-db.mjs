@@ -1,8 +1,21 @@
 /* eslint-disable no-undef */
-import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, rm, stat } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
-import path from 'node:path'
+
+import {
+  assertAbsolutePath,
+  canonicalSafeBackupDir,
+  childEnvironment,
+  parseConnectionParts,
+  registerTemporaryFileCleanup,
+  sanitizeConnectionSearch,
+  sanitizedConnectionUri,
+  sha256File,
+  toolInvocation,
+  uniqueDumpPath,
+  writeChecksumAtomic,
+  writePgpassFile,
+} from './backup-restore-lib.mjs'
 
 if (process.argv.includes('--help')) {
   console.log('DATABASE_URL=... BACKUP_DIR=... node scripts/backup-db.mjs')
@@ -11,19 +24,54 @@ if (process.argv.includes('--help')) {
 const databaseUrl = process.env.DATABASE_URL
 const backupDir = process.env.BACKUP_DIR
 if (!databaseUrl || !backupDir) throw new Error('DATABASE_URL and BACKUP_DIR are required.')
-const resolvedDir = path.resolve(backupDir)
+let source
+try {
+  source = parseConnectionParts(databaseUrl)
+} catch {
+  throw new Error('DATABASE_URL must be a valid PostgreSQL URL.')
+}
+const resolvedDir = await canonicalSafeBackupDir(assertAbsolutePath(backupDir, 'BACKUP_DIR'))
 await mkdir(resolvedDir, { recursive: true })
-const timestamp = new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-')
-const file = path.join(resolvedDir, `erp2-${timestamp}.dump`)
-await run('pg_dump', ['--format=custom', '--no-owner', '--file', file, databaseUrl])
-const checksum = createHash('sha256').update(await readFile(file)).digest('hex')
-await writeFile(`${file}.sha256`, `${checksum}  ${path.basename(file)}\n`, { flag: 'wx' })
-console.log(JSON.stringify({ file, checksum }))
+const file = await uniqueDumpPath(resolvedDir)
+const pgpass = source.password === '' ? null : await writePgpassFile({
+  host: source.host,
+  port: source.port,
+  database: source.database,
+  username: source.username,
+  password: source.password,
+})
+const cleanupPgpass = pgpass ? registerTemporaryFileCleanup(pgpass) : async () => {}
+try {
+  const safeSearch = sanitizeConnectionSearch(source.search)
+  await runPgDump(sanitizedConnectionUri({ ...source, search: safeSearch }), pgpass, file)
+  const size = await stat(file).then(
+    (fileStat) => fileStat.size,
+    () => { throw new Error('Backup dump is empty.') },
+  )
+  if (size === 0) throw new Error('Backup dump is empty.')
+  const checksum = await sha256File(file)
+  await writeChecksumAtomic(file, checksum)
+  console.log(JSON.stringify({ file, checksum }))
+} catch (error) {
+  await rm(file, { force: true }).catch(() => {})
+  await rm(`${file}.sha256`, { force: true }).catch(() => {})
+  throw error
+} finally {
+  await cleanupPgpass()
+}
 
-function run(command, args) {
+function runPgDump(sanitizedUri, pgpass, file) {
+  const env = childEnvironment(process.env, pgpass)
+  const { command, args } = toolInvocation('pg_dump', process.env.ERP2_TEST_PG_DUMP, ['--format=custom', '--no-owner', '--file', file, sanitizedUri])
+  const label = command === process.execPath ? 'pg_dump' : command
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { stdio: 'inherit', windowsHide: true })
-    child.once('error', reject)
-    child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`${command} exited with ${code}`)))
+    const child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+    child.stdout.resume()
+    child.stderr.resume()
+    child.once('error', () => reject(new Error(`${label} failed to start.`)))
+    child.once('exit', (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(`${label} failed.`))
+    })
   })
 }

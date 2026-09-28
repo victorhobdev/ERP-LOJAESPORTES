@@ -34,6 +34,7 @@ const receiptSchema = z.object({
   }
 })
 const idSchema = z.object({ id: z.string().uuid() })
+const cancelSchema = z.object({ reason: z.string().trim().min(1).max(500) })
 const listSchema = z.object({
   status: z.enum(['draft', 'placed', 'partially_received', 'fully_received', 'cancelled']).optional(),
   page: z.coerce.number().int().positive().default(1),
@@ -52,7 +53,40 @@ type ReceiptItemRow = {
   current_cost: string
 }
 
+const suppliersQuerySchema = z.object({
+  search: z.string().trim().max(120).optional(),
+  limit: z.coerce.number().int().positive().max(100).default(20),
+})
+
 export function registerPurchaseRoutes(app: FastifyInstance, pool: Pool) {
+  app.get('/suppliers', async (request, reply) => {
+    if (!await requirePermission(pool, request, reply, 'purchases:read')) return
+    const parsed = suppliersQuerySchema.safeParse(request.query)
+    if (!parsed.success) return sendError(reply, request, 400, 'VALIDATION_ERROR', 'Busca de fornecedores inválida.')
+
+    const params: unknown[] = []
+    const push = (value: unknown) => { params.push(value); return `$${params.length}` }
+    const where = parsed.data.search
+      ? `WHERE active = true AND (name ILIKE ${push(`%${parsed.data.search}%`)} OR contact ILIKE ${push(`%${parsed.data.search}%`)})`
+      : 'WHERE active = true'
+    const result = await pool.query<{ id: string; name: string; contact: string | null; total: string }>(
+      `SELECT id, name, contact, count(*) OVER()::text AS total
+       FROM suppliers ${where}
+       ORDER BY name ASC, id ASC
+       LIMIT $${params.length + 1}`,
+      [...params, parsed.data.limit],
+    )
+    const total = Number(result.rows[0]?.total ?? 0)
+    return reply.send({
+      items: result.rows.map((row) => {
+        const { total: _total, ...supplier } = row
+        void _total
+        return supplier
+      }),
+      total,
+    })
+  })
+
   app.get('/purchase-orders', async (request, reply) => {
     if (!await requirePermission(pool, request, reply, 'purchases:read')) return
     const parsed = listSchema.safeParse(request.query)
@@ -60,6 +94,11 @@ export function registerPurchaseRoutes(app: FastifyInstance, pool: Pool) {
     const { status, page, limit } = parsed.data
     const values: unknown[] = []
     const where = status ? `WHERE po.status = $${values.push(status)}` : ''
+    const counted = await pool.query<{ total: string }>(
+      `SELECT count(DISTINCT po.id)::text AS total FROM purchase_orders po ${where}`,
+      values,
+    )
+    const total = Number(counted.rows[0]?.total ?? 0)
     values.push(limit, (page - 1) * limit)
     const result = await pool.query(
       `SELECT po.id, po.status, po.ordered_on::text AS "orderedOn", s.name AS "supplierName",
@@ -73,7 +112,7 @@ export function registerPurchaseRoutes(app: FastifyInstance, pool: Pool) {
        LIMIT $${values.length - 1} OFFSET $${values.length}`,
       values,
     )
-    return reply.send({ items: result.rows, page, limit })
+    return reply.send({ items: result.rows, total, page, limit })
   })
 
   app.post('/purchase-orders', async (request, reply) => {
@@ -300,25 +339,88 @@ export function registerPurchaseRoutes(app: FastifyInstance, pool: Pool) {
     }
   })
 
+  // Cancelamento (doc 08): proibido depois de recebimento sem fluxo de reversão;
+  // motivo obrigatório fica na própria ordem e na auditoria.
+  app.post('/purchase-orders/:id/cancel', async (request, reply) => {
+    const session = await requirePermission(pool, request, reply, 'purchases:write')
+    if (!session) return
+    if (!hasValidCsrf(session, request)) return sendError(reply, request, 403, 'INVALID_CSRF', 'Token CSRF inválido.')
+
+    const params = idSchema.safeParse(request.params)
+    const parsed = cancelSchema.safeParse(request.body)
+    if (!params.success || !parsed.success) {
+      return sendError(reply, request, 400, 'VALIDATION_ERROR', 'Revise o pedido e informe o motivo do cancelamento.')
+    }
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const orderResult = await client.query<{ status: string }>(
+        'SELECT status FROM purchase_orders WHERE id = $1 FOR UPDATE', [params.data.id],
+      )
+      const order = orderResult.rows[0]
+      if (!order) {
+        await client.query('ROLLBACK')
+        return sendError(reply, request, 404, 'PURCHASE_ORDER_NOT_FOUND', 'Pedido não encontrado.')
+      }
+      if (order.status === 'cancelled') {
+        await client.query('ROLLBACK')
+        return sendError(reply, request, 409, 'PURCHASE_ORDER_ALREADY_CANCELLED', 'O pedido já está cancelado.')
+      }
+      const received = await client.query<{ total: string }>(
+        'SELECT coalesce(sum(received_quantity), 0)::text AS total FROM purchase_order_items WHERE purchase_order_id = $1',
+        [params.data.id],
+      )
+      if (order.status !== 'draft' && order.status !== 'placed' || received.rows[0]?.total !== '0') {
+        await client.query('ROLLBACK')
+        return sendError(reply, request, 409, 'PURCHASE_ORDER_NOT_CANCELLABLE', 'Cancelamento não é permitido depois de recebimento.')
+      }
+      const updated = await client.query<{ cancellation_reason: string }>(
+        `UPDATE purchase_orders
+         SET status = 'cancelled', cancellation_reason = $2, updated_at = now()
+         WHERE id = $1
+         RETURNING cancellation_reason`,
+        [params.data.id, parsed.data.reason],
+      )
+      await client.query(
+        `INSERT INTO audit_log (id, user_id, action, entity_type, entity_id, request_id, after_data)
+         VALUES ($1, $2, 'purchase_order.cancel', 'purchase_order', $3, $4, $5)`,
+        [randomUUID(), session.user_id, params.data.id, request.id, JSON.stringify({
+          reason: parsed.data.reason, previousStatus: order.status,
+        })],
+      )
+      await client.query('COMMIT')
+      return reply.send({ id: params.data.id, status: 'cancelled', cancellationReason: updated.rows[0]!.cancellation_reason })
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  })
+
   app.get('/purchase-orders/:id', async (request, reply) => {
     if (!await requirePermission(pool, request, reply, 'purchases:read')) return
     const params = idSchema.safeParse(request.params)
     if (!params.success) return sendError(reply, request, 400, 'VALIDATION_ERROR', 'Pedido inválido.')
 
     const orderResult = await pool.query(
-      `SELECT id, supplier_id AS "supplierId", status, ordered_on::text AS "orderedOn",
-              estimated_items_amount::text AS "estimatedItemsAmount",
-              import_fee_amount::text AS "importFeeAmount", final_amount::text AS "finalAmount"
-       FROM purchase_orders WHERE id = $1`,
+      `SELECT po.id, po.supplier_id AS "supplierId", s.name AS "supplierName", po.status, po.ordered_on::text AS "orderedOn",
+              po.cancellation_reason AS "cancellationReason",
+              po.estimated_items_amount::text AS "estimatedItemsAmount",
+              po.import_fee_amount::text AS "importFeeAmount", po.final_amount::text AS "finalAmount"
+       FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id WHERE po.id = $1`,
       [params.data.id],
     )
     const order = orderResult.rows[0]
     if (!order) return sendError(reply, request, 404, 'PURCHASE_ORDER_NOT_FOUND', 'Pedido não encontrado.')
     const items = await pool.query(
-      `SELECT id, variant_id AS "variantId", ordered_quantity AS "orderedQuantity",
+      `SELECT poi.id, variant_id AS "variantId", p.club, p.model, v.type, v.size, ordered_quantity AS "orderedQuantity",
               received_quantity AS "receivedQuantity", (ordered_quantity - received_quantity) AS "pendingQuantity",
               supplier_unit_cost::text AS "supplierUnitCost", final_unit_cost::text AS "finalUnitCost"
-       FROM purchase_order_items WHERE purchase_order_id = $1 ORDER BY created_at, id`,
+       FROM purchase_order_items poi
+       JOIN product_variants v ON v.id = poi.variant_id JOIN products p ON p.id = v.product_id
+       WHERE purchase_order_id = $1 ORDER BY poi.created_at, poi.id`,
       [params.data.id],
     )
     const receipts = await pool.query(

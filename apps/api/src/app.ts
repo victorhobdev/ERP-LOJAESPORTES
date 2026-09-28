@@ -6,24 +6,42 @@ import Fastify, { type FastifyServerOptions } from 'fastify'
 import type { Pool } from 'pg'
 
 import { registerAuthRoutes } from './modules/auth/routes.js'
+import { registerCatalogRoutes, type CatalogPublisher } from './modules/catalog/routes.js'
+import type { CatalogSyncProvider } from './modules/catalog/sync-provider.js'
 import { registerCustomerOrderRoutes } from './modules/customer-orders/routes.js'
+import { registerCustomerRoutes } from './modules/customers/routes.js'
 import { registerInventoryRoutes } from './modules/inventory/routes.js'
 import { registerProductRoutes } from './modules/products/routes.js'
 import { registerPurchaseRoutes } from './modules/purchases/routes.js'
 import { registerReportRoutes } from './modules/reports/routes.js'
 import { registerExchangeRoutes } from './modules/sales/exchange-routes.js'
 import { registerSalesRoutes } from './modules/sales/routes.js'
+import { registerUserRoutes } from './modules/users/routes.js'
 
 type BuildAppOptions = {
   allowedOrigins?: string[]
   logger?: FastifyServerOptions['logger']
   pool?: Pool
   secureCookies?: boolean
+  mediaStorageDir?: string
+  catalogSyncProvider?: CatalogSyncProvider | (() => CatalogSyncProvider | undefined)
+  catalogPublisher?: CatalogPublisher
+  catalogRateLimits?: { uploadPerMinute?: number; syncPerMinute?: number }
+  authenticationDisabled?: boolean
+}
+
+const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/
+
+export function safeVersion(value: string | undefined): string {
+  if (value === undefined || value.length > 32 || !versionPattern.test(value)) return '0.0.0'
+  return value
 }
 
 export function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({ logger: options.logger ?? true })
   const allowedOrigins = options.allowedOrigins ?? []
+
+  app.decorate('authenticationDisabled', options.authenticationDisabled ?? false)
 
   void app.register(cookie)
   void app.register(cors, {
@@ -56,6 +74,29 @@ export function buildApp(options: BuildAppOptions = {}) {
 
   app.get('/health', async () => ({ status: 'ok', service: 'erp-api' }))
 
+  app.get('/health/ready', async (_request, reply) => {
+    const version = safeVersion(process.env['APP_VERSION'])
+    const catalog = process.env['CATALOG_SYNC_ENABLED'] === 'true' ? 'configured' : 'not_configured'
+    if (!options.pool) {
+      return reply.status(503).send({
+        status: 'not_ready', service: 'erp-api', version,
+        checks: { database: 'unconfigured' }, integrations: { catalog },
+      })
+    }
+    try {
+      await options.pool.query('SELECT 1')
+    } catch {
+      return reply.status(503).send({
+        status: 'not_ready', service: 'erp-api', version,
+        checks: { database: 'down' }, integrations: { catalog },
+      })
+    }
+    return reply.send({
+      status: 'ready', service: 'erp-api', version,
+      checks: { database: 'up' }, integrations: { catalog },
+    })
+  })
+
   if (options.pool) {
     void app.register(async (authScope) => {
       await authScope.register(rateLimit, { global: false })
@@ -66,7 +107,15 @@ export function buildApp(options: BuildAppOptions = {}) {
       registerExchangeRoutes(authScope, options.pool!)
       registerPurchaseRoutes(authScope, options.pool!)
       registerCustomerOrderRoutes(authScope, options.pool!)
+      registerCustomerRoutes(authScope, options.pool!)
       registerReportRoutes(authScope, options.pool!)
+      registerUserRoutes(authScope, options.pool!)
+      registerCatalogRoutes(authScope, options.pool!, {
+        ...(options.mediaStorageDir === undefined ? {} : { mediaStorageDir: options.mediaStorageDir }),
+        ...(options.catalogSyncProvider === undefined ? {} : { syncProvider: options.catalogSyncProvider }),
+        ...(options.catalogPublisher === undefined ? {} : { publisher: options.catalogPublisher }),
+        ...(options.catalogRateLimits === undefined ? {} : { rateLimits: options.catalogRateLimits }),
+      })
     })
   }
 

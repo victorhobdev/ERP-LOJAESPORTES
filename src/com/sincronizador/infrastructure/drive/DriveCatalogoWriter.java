@@ -285,7 +285,9 @@ public class DriveCatalogoWriter implements CatalogoWriter {
             throw new IllegalArgumentException("Arquivo inválido: " + arquivo.getAbsolutePath());
         }
         String n = arquivo.getName().toLowerCase(Locale.ROOT);
-        if (!(n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp"))) {
+        boolean extensaoSuportada = n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png") || n.endsWith(".webp");
+        boolean semExtensao = !n.contains(".");
+        if (!extensaoSuportada && (!semExtensao || detectarMimeTypePorConteudo(arquivo) == null)) {
             throw new IllegalArgumentException("Imagem deve ser .jpg/.jpeg/.png/.webp: " + arquivo.getName());
         }
     }
@@ -293,13 +295,44 @@ public class DriveCatalogoWriter implements CatalogoWriter {
     private String detectarMimeType(java.io.File arquivo) {
         try {
             String probed = Files.probeContentType(arquivo.toPath());
-            if (probed != null && !probed.isBlank()) return probed;
+            if ("image/jpeg".equals(probed) || "image/png".equals(probed) || "image/webp".equals(probed)) {
+                return probed;
+            }
         } catch (IOException ignored) {}
 
         String n = arquivo.getName().toLowerCase(Locale.ROOT);
         if (n.endsWith(".png")) return "image/png";
         if (n.endsWith(".webp")) return "image/webp";
+        String porConteudo = detectarMimeTypePorConteudo(arquivo);
+        if (porConteudo != null) return porConteudo;
         return "image/jpeg";
+    }
+
+    private String detectarMimeTypePorConteudo(java.io.File arquivo) {
+        try (InputStream in = Files.newInputStream(arquivo.toPath())) {
+            byte[] cabecalho = in.readNBytes(12);
+            if (cabecalho.length >= 3
+                    && (cabecalho[0] & 0xff) == 0xff
+                    && (cabecalho[1] & 0xff) == 0xd8
+                    && (cabecalho[2] & 0xff) == 0xff) {
+                return "image/jpeg";
+            }
+            if (cabecalho.length >= 8
+                    && (cabecalho[0] & 0xff) == 0x89
+                    && cabecalho[1] == 'P' && cabecalho[2] == 'N' && cabecalho[3] == 'G'
+                    && (cabecalho[4] & 0xff) == 0x0d && (cabecalho[5] & 0xff) == 0x0a
+                    && (cabecalho[6] & 0xff) == 0x1a && (cabecalho[7] & 0xff) == 0x0a) {
+                return "image/png";
+            }
+            if (cabecalho.length >= 12
+                    && cabecalho[0] == 'R' && cabecalho[1] == 'I' && cabecalho[2] == 'F' && cabecalho[3] == 'F'
+                    && cabecalho[8] == 'W' && cabecalho[9] == 'E' && cabecalho[10] == 'B' && cabecalho[11] == 'P') {
+                return "image/webp";
+            }
+        } catch (IOException ignored) {
+            return null;
+        }
+        return null;
     }
 
     private String calcularMd5Hex(java.io.File arquivo) {
