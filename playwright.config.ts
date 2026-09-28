@@ -32,6 +32,7 @@ export default defineConfig({
             DATABASE_URL: process.env['E2E_DATABASE_URL'] ?? '',
             MEDIA_STORAGE_DIR: e2eMediaDir,
             CATALOG_SYNC_LOCAL_DIR: e2eSyncDir,
+            E2E_USER_ID: process.env['E2E_USER_ID'] ?? '',
             PORT: '3333',
             HOST: '127.0.0.1',
             CORS_ORIGINS: 'http://127.0.0.1:4173',

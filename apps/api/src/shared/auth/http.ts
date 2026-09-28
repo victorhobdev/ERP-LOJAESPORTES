@@ -23,14 +23,16 @@ export function isAuthenticationDisabled(request: FastifyRequest): boolean {
 
 export async function loadSession(pool: Pool, request: FastifyRequest): Promise<SessionContext | undefined> {
   if (isAuthenticationDisabled(request)) {
+    const e2eUserId = process.env['E2E_USER_ID'] || null
     const result = await pool.query<SessionContext>(
       `SELECT 'authentication-disabled' AS session_id, '' AS csrf_hash,
               u.id AS user_id, u.username, u.display_name,
               'administrator' AS role, ARRAY['*']::text[] AS permissions
        FROM users u
-       WHERE u.active = true
+       WHERE u.active = true AND ($1::uuid IS NULL OR u.id = $1::uuid)
        ORDER BY (u.username = 'vitinho.local') DESC, u.created_at, u.id
        LIMIT 1`,
+      [e2eUserId],
     )
     return result.rows[0]
   }
