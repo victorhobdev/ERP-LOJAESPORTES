@@ -44,6 +44,7 @@ jobs:
           export E2E_CLUB=$(node -e "console.log(JSON.parse(process.argv[1]).club)" "$SEED_JSON")
           export E2E_MODEL=$(node -e "console.log(JSON.parse(process.argv[1]).model)" "$SEED_JSON")
           export E2E_VARIANT_ID=$(node -e "console.log(JSON.parse(process.argv[1]).variantId)" "$SEED_JSON")
+          export E2E_SKU=$(node -e "console.log(JSON.parse(process.argv[1]).sku)" "$SEED_JSON")
           pnpm exec playwright test tests/e2e/paid-sale-fullstack.spec.ts
           pnpm --filter @erp/api verify:e2e
       - name: full-stack catalog (upload, media e sync local) against the test database
