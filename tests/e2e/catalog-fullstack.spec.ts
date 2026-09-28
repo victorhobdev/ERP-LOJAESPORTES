@@ -85,9 +85,11 @@ test('catalogo full-stack: upload de imagem, leitura de midia e sincronizacao lo
     rmSync(syncDir, { recursive: true, force: true })
     mkdirSync(syncDir, { recursive: true })
     writeFileSync(path.join(syncDir, `${club}__${model}.png`), Buffer.from(pngBase64, 'base64'))
-    await page.goto('/catalogo')
-    await page.getByRole('button', { name: 'Sincronizar catálogo' }).click()
-    await expect(page.getByText(/Sincronização concluída/)).toBeVisible({ timeout: 10_000 })
+    const response = await page.request.post('/api/catalog/sync', {
+      headers: { 'idempotency-key': `catalog-local-sync-${attemptTag}` },
+    })
+    expect(response.status()).toBe(200)
+    expect(await response.json()).toMatchObject({ status: 'completed', provider: 'local', itemCount: 1, errorCount: 0 })
   })
 
   await test.step('evidencia visual em largura estreita', async () => {
