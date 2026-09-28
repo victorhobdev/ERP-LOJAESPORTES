@@ -13,13 +13,13 @@ describe.runIf(!!testDatabaseUrl)('assertTestDatabaseUrl', () => {
   it('rejects a non-test database before any write and without leaking secrets', async () => {
     const url = new URL(testDatabaseUrl!)
     const password = url.password
-    url.pathname = '/postgres'
+    url.pathname = '/template1'
     const error = await assertTestDatabaseUrl(url.toString()).then(
       () => { throw new Error('expected rejection') },
       (cause: unknown) => cause,
     )
     expect(String(error)).toMatch(/explicit test database/)
-    expect(String(error)).toMatch(/"postgres"/)
+    expect(String(error)).toMatch(/"template1"/)
     if (password) expect(String(error)).not.toContain(password)
     expect(String(error)).not.toContain(url.toString())
   })

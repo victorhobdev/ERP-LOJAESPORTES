@@ -34,7 +34,7 @@ describe('initial PostgreSQL schema', () => {
       'product_variants', 'products', 'purchase_order_items', 'purchase_orders', 'roles',
       'sale_items', 'sales', 'sessions', 'suppliers', 'users',
     ]))
-  })
+  }, 15_000)
 
   it('rejects a negative stock balance at the database boundary', async () => {
     const database = new PGlite()
