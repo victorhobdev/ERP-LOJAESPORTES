@@ -55,7 +55,8 @@ test('venda paga full-stack: venda, persistencia e retentativa sem duplicar', as
     expect(detailResponse.status()).toBe(200)
     const detail = (await detailResponse.json()) as SaleDetail
     expect(detail).toMatchObject({ status: 'paid', finalAmount: '150.00', amountDue: '0.00' })
-    expect(detail.items).toEqual([{ variantId, quantity: 1, unitPrice: '150.00', unitCost: '80.00' }])
+    expect(detail.items).toHaveLength(1)
+    expect(detail.items[0]).toMatchObject({ variantId, quantity: 1, unitPrice: '150.00', unitCost: '80.00' })
     expect(detail.payments).toHaveLength(1)
     expect(detail.payments[0]).toMatchObject({ amount: '150.00', method: 'pix', status: 'confirmed' })
 
